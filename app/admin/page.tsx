@@ -3,6 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
+import { useSession, signOut } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 type Customer = {
   id: string;
@@ -1365,10 +1367,6 @@ const navItems: { id: NavId; label: string; icon: React.ReactNode }[] = [
   },
 ];
 
-const pendingCount = mockCustomers.filter((c) => c.status === "Pending").length;
-const approvedCount = mockCustomers.filter((c) => c.status === "Approved" || c.status === "Signed up").length;
-const declinedCount = mockCustomers.filter((c) => c.status === "Declined").length;
-
 function ApplicationsTable({
   customers,
   onView,
@@ -1461,6 +1459,8 @@ function ApplicationsTable({
 }
 
 export default function AdminDashboardPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [selected, setSelected] = useState<Customer | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeNav, setActiveNav] = useState<NavId>("dashboard");
@@ -1474,8 +1474,101 @@ export default function AdminDashboardPage() {
   const [declineModalOpen, setDeclineModalOpen] = useState(false);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  
+  // API state
+  const [applications, setApplications] = useState<Customer[]>([]);
+  const [isLoadingApplications, setIsLoadingApplications] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const getEffectiveStatus = (c: Customer) => statusOverrides[c.id] ?? c.status;
+
+  // Calculate counts
+  const pendingCount = applications.filter((c) => getEffectiveStatus(c) === "Pending").length;
+  const approvedCount = applications.filter((c) => getEffectiveStatus(c) === "Approved" || getEffectiveStatus(c) === "Signed up").length;
+  const declinedCount = applications.filter((c) => getEffectiveStatus(c) === "Declined").length;
+
+  // Fetch applications from API
+  const fetchApplications = async () => {
+    try {
+      setIsLoadingApplications(true);
+      setError(null);
+      const response = await fetch("/api/applications");
+      if (!response.ok) throw new Error("Failed to fetch applications");
+      const data = await response.json();
+      
+      // Map API data to Customer type
+      const mappedData = data.map((app: any) => ({
+        id: app.id,
+        recordNumber: app.recordNumber,
+        appType: app.appType.toLowerCase(),
+        membership: app.membership.toLowerCase(),
+        area: app.area,
+        district: app.district,
+        barangay: app.barangay,
+        firstName: app.firstName,
+        middleName: app.middleName,
+        lastName: app.lastName,
+        suffixName: app.suffixName || "",
+        birthdate: app.birthdate,
+        noMiddleName: app.noMiddleName,
+        gender: app.gender.toLowerCase(),
+        civilStatus: app.civilStatus,
+        spouseFirst: app.spouseFirst || "",
+        spouseMiddle: app.spouseMiddle || "",
+        spouseLast: app.spouseLast || "",
+        spouseSuffix: app.spouseSuffix || "",
+        spouseBirthdate: app.spouseBirthdate || "",
+        residenceAddress: app.residenceAddress,
+        cellphone: app.cellphone,
+        landline: app.landline || "",
+        email: app.email,
+        privacyConsent: app.privacyConsent,
+        privacyNewsletter: app.privacyNewsletter,
+        privacyEmail: app.privacyEmail,
+        privacySms: app.privacySms,
+        privacyPhone: app.privacyPhone,
+        privacySocial: app.privacySocial,
+        cosignatory: app.cosignatory || "",
+        witness: app.witness || "",
+        status: app.status === "SIGNED_UP" ? "Signed up" : 
+                app.status === "PENDING" ? "Pending" :
+                app.status === "APPROVED" ? "Approved" :
+                app.status === "DECLINED" ? "Declined" : app.status,
+        orNumber: app.orNumber,
+        dateIssued: app.dateIssued,
+        notes: app.notes || "",
+      }));
+      
+      setApplications(mappedData);
+    } catch (err) {
+      console.error("Error fetching applications:", err);
+      setError("Failed to load applications");
+      // Fallback to mock data on error
+      setApplications(mockCustomers);
+    } finally {
+      setIsLoadingApplications(false);
+    }
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    await signOut({ redirect: false });
+    router.push("/admin-login");
+  };
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/admin-login");
+    }
+  }, [status, router]);
+
+  // Fetch applications on mount
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetchApplications();
+    }
+  }, [status]);
 
   // Load theme from localStorage on mount; persist when changed
   useEffect(() => {
@@ -1503,34 +1596,94 @@ export default function AdminDashboardPage() {
     activeNav === "dashboard" || activeNav === "pending" || activeNav === "approved" || activeNav === "declined";
   const listCustomers =
     activeNav === "dashboard"
-      ? mockCustomers
+      ? applications
       : activeNav === "pending"
-        ? mockCustomers.filter((c) => getEffectiveStatus(c) === "Pending")
+        ? applications.filter((c) => getEffectiveStatus(c) === "Pending")
         : activeNav === "approved"
-          ? mockCustomers.filter((c) => getEffectiveStatus(c) === "Approved" || getEffectiveStatus(c) === "Signed up")
+          ? applications.filter((c) => getEffectiveStatus(c) === "Approved" || getEffectiveStatus(c) === "Signed up")
           : activeNav === "declined"
-            ? mockCustomers.filter((c) => getEffectiveStatus(c) === "Declined")
-            : mockCustomers;
+            ? applications.filter((c) => getEffectiveStatus(c) === "Declined")
+            : applications;
 
   const effectiveSelected =
     selected
       ? (customerEdits[selected.id] ?? { ...selected, status: getEffectiveStatus(selected) })
       : null;
 
-  const handleApprove = (c: Customer) => {
-    setStatusOverrides((prev) => ({ ...prev, [c.id]: "Approved" }));
-    setSelected(null);
-    setApproveModalOpen(false);
-    setSuccessModalOpen(true);
+  const handleApprove = async (c: Customer) => {
+    try {
+      const response = await fetch(`/api/applications/${c.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve" }),
+      });
+
+      if (!response.ok) throw new Error("Failed to approve application");
+
+      setStatusOverrides((prev) => ({ ...prev, [c.id]: "Approved" }));
+      setSelected(null);
+      setApproveModalOpen(false);
+      setSuccessModalOpen(true);
+      
+      // Refresh applications
+      await fetchApplications();
+    } catch (err) {
+      console.error("Error approving application:", err);
+      alert("Failed to approve application. Please try again.");
+    }
   };
-  const handleDecline = (c: Customer) => {
-    setStatusOverrides((prev) => ({ ...prev, [c.id]: "Declined" }));
-    setSelected(null);
-    setDeclineModalOpen(false);
+
+  const handleDecline = async (c: Customer) => {
+    try {
+      const response = await fetch(`/api/applications/${c.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "decline" }),
+      });
+
+      if (!response.ok) throw new Error("Failed to decline application");
+
+      setStatusOverrides((prev) => ({ ...prev, [c.id]: "Declined" }));
+      setSelected(null);
+      setDeclineModalOpen(false);
+      
+      // Refresh applications
+      await fetchApplications();
+    } catch (err) {
+      console.error("Error declining application:", err);
+      alert("Failed to decline application. Please try again.");
+    }
   };
-  const handleDoneEdit = (draft: Customer) => {
-    setCustomerEdits((prev) => ({ ...prev, [draft.id]: draft }));
-    setDetailEditMode(false);
+
+  const handleDoneEdit = async (draft: Customer) => {
+    try {
+      const response = await fetch(`/api/applications/${draft.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "edit",
+          ...draft,
+          appType: draft.appType.toUpperCase(),
+          membership: draft.membership.toUpperCase(),
+          gender: draft.gender.toUpperCase(),
+          status: draft.status === "Signed up" ? "SIGNED_UP" :
+                  draft.status === "Pending" ? "PENDING" :
+                  draft.status === "Approved" ? "APPROVED" :
+                  draft.status === "Declined" ? "DECLINED" : draft.status,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to update application");
+
+      setCustomerEdits((prev) => ({ ...prev, [draft.id]: draft }));
+      setDetailEditMode(false);
+      
+      // Refresh applications
+      await fetchApplications();
+    } catch (err) {
+      console.error("Error updating application:", err);
+      alert("Failed to update application. Please try again.");
+    }
   };
 
   const handleView = (c: Customer) => {
@@ -1549,6 +1702,23 @@ export default function AdminDashboardPage() {
   const modalTitleClass = theme === "dark" ? "text-lg font-semibold text-white" : "text-lg font-semibold text-slate-800";
   const modalBodyClass = theme === "dark" ? "mt-2 text-slate-300" : "mt-2 text-slate-600";
   const modalFooterClass = "mt-6 flex justify-end gap-2";
+
+  // Show loading state while checking authentication
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-900">
+        <div className="text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent mx-auto"></div>
+          <p className="mt-4 text-slate-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (redirect will happen in useEffect)
+  if (status === "unauthenticated") {
+    return null;
+  }
 
   return (
     <div
@@ -1702,23 +1872,6 @@ export default function AdminDashboardPage() {
             </button>
           ))}
         </nav>
-        <div
-          className={`shrink-0 border-t p-2 ${theme === "dark" ? "border-slate-600" : "border-slate-100"}`}
-        >
-          <Link
-            href="/admin-login"
-            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ease-out active:scale-[0.98] ${
-              theme === "dark"
-                ? "text-slate-300 hover:bg-slate-700 hover:text-white"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            }`}
-          >
-            <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            Logout
-          </Link>
-        </div>
       </aside>
 
       {/* Main: header + content — margin-left so content doesn't sit under fixed sidebar */}
@@ -1794,7 +1947,7 @@ export default function AdminDashboardPage() {
                 aria-label="Profile and settings"
                 aria-expanded={profileMenuOpen}
               >
-                A
+                {session?.user?.name?.[0]?.toUpperCase() || "A"}
               </button>
               {profileMenuOpen && (
                 <div
@@ -1812,18 +1965,18 @@ export default function AdminDashboardPage() {
                           theme === "dark" ? "bg-[#FFF19B] text-slate-800" : "bg-[#3D45AA] text-white"
                         }`}
                       >
-                        A
+                        {session?.user?.name?.[0]?.toUpperCase() || "A"}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p
                           className={`truncate font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-800"}`}
                         >
-                          Admin User
+                          {session?.user?.name || "Admin User"}
                         </p>
                         <p
                           className={`truncate text-sm ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}
                         >
-                          admin@aneco.example.com
+                          {session?.user?.email || "admin@example.com"}
                         </p>
                       </div>
                     </div>
@@ -1870,6 +2023,21 @@ export default function AdminDashboardPage() {
                     >
                       {theme === "light" ? "Light mode" : "Dark mode"}
                     </p>
+                    {/* Logout button */}
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className={`mt-3 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                        theme === "dark"
+                          ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                          : "bg-red-50 text-red-600 hover:bg-red-100"
+                      }`}
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      Sign Out
+                    </button>
                   </div>
                 </div>
               )}
@@ -1916,7 +2084,7 @@ export default function AdminDashboardPage() {
                       theme === "dark" ? "bg-[#FFF19B] text-slate-800" : "bg-[#3D45AA] text-white"
                     }`}
                   >
-                    <p className="text-2xl font-bold">{mockCustomers.length}</p>
+                    <p className="text-2xl font-bold">{isLoadingApplications ? "..." : applications.length}</p>
                     <p className="mt-1 text-sm font-medium opacity-90">Total Applications</p>
                     <svg className="mt-2 h-8 w-8 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1998,6 +2166,17 @@ export default function AdminDashboardPage() {
                     searchQuery={searchQuery}
                     theme={theme}
                   />
+                  {isLoadingApplications && (
+                    <div className="flex justify-center items-center py-8">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                      <p className="ml-3 text-slate-500">Loading applications...</p>
+                    </div>
+                  )}
+                  {error && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg mt-4">
+                      <p className="text-red-600">{error}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : activeNav === "logs" ? (
