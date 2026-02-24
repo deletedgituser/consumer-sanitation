@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 function UserIcon({ className }: { className?: string }) {
   return (
@@ -44,28 +44,9 @@ function LockIcon({ className }: { className?: string }) {
 }
 
 export default function Home() {
-  const router = useRouter();
-
-  function handleVerify(e: React.FormEvent) {
-    e.preventDefault();
-    router.push("/verify");
-  }
-
   return (
-    <div className="relative flex min-h-screen min-h-[100dvh] flex-col items-center justify-center overflow-x-hidden overflow-y-auto bg-slate-900 p-3 py-5 sm:p-5 sm:py-6 md:flex-row md:p-6 lg:p-8 [padding:max(0.75rem,env(safe-area-inset-top))_max(0.75rem,env(safe-area-inset-right))_max(0.75rem,env(safe-area-inset-bottom))_max(0.75rem,env(safe-area-inset-left))]">
-      {/* Realistic lightning – video loop */}
-      <div className="lightning-video-wrap pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
-        <video
-          className="h-full w-full object-cover object-center opacity-[0.5]"
-          src="https://assets.mixkit.co/videos/47948/47948-720.mp4"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-        />
-      </div>
-      {/* Card wrapper – centered on mobile, glass style */}
+    <div className="relative flex min-h-screen min-h-[100dvh] flex-col items-center justify-center overflow-x-hidden overflow-y-auto bg-[#EAEFEF] p-3 py-5 sm:p-5 sm:py-6 md:flex-row md:p-6 lg:p-8 [padding:max(0.75rem,env(safe-area-inset-top))_max(0.75rem,env(safe-area-inset-right))_max(0.75rem,env(safe-area-inset-bottom))_max(0.75rem,env(safe-area-inset-left))]">
+      {/* Card wrapper – centered on mobile */}
       <div className="relative z-10 flex w-full max-w-4xl flex-1 flex-col items-center justify-center">
         <div className="login-card relative flex w-full max-w-4xl flex-col overflow-hidden rounded-xl shadow-xl sm:rounded-2xl md:flex-row">
           {/* Left panel – logo */}
@@ -93,7 +74,7 @@ export default function Home() {
                 Please enter your details.
               </p>
 
-              <form className="mt-5 space-y-4 sm:mt-6 sm:space-y-5 lg:mt-8" onSubmit={handleVerify}>
+              <form className="mt-5 space-y-4 sm:mt-6 sm:space-y-5 lg:mt-8">
                 <div>
                   <label htmlFor="email" className="sr-only">
                     Account number
@@ -105,17 +86,18 @@ export default function Home() {
                       type="text"
                       inputMode="numeric"
                       placeholder="Enter your Account Number"
+                      readOnly
                       className="w-full min-w-0 border-0 bg-transparent text-base text-white placeholder:text-slate-400 focus:outline-none focus:ring-0 [font-size:16px]"
                     />
                   </div>
                 </div>
 
-                <button
-                  type="submit"
+                <Link
+                  href="/verify"
                   className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-base font-semibold text-white shadow-lg transition-colors hover:bg-[rgba(245,158,11,0.25)] focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-900/50 active:scale-[0.98]"
                 >
                   Verify
-                </button>
+                </Link>
               </form>
             </div>
           </div>

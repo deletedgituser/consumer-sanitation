@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 type Customer = {
   id: string;
   recordNumber: string;
+  accountNumber?: string;
   appType: "new" | "change";
   membership: "household" | "corporate";
   area: string;
@@ -1017,7 +1018,7 @@ function CustomerDetail({
         </div>
       </div>
 
-      {/* Application Type + Membership Type */}
+      {/* Application Type + Membership Type + Account Number */}
       <div className="mb-4">
         <div className={sectionHeaderClass}>Application Type</div>
         <div className={boxClass}>
@@ -1036,6 +1037,7 @@ function CustomerDetail({
             </p>
           )}
         </div>
+
         <div className={`mt-3 ${sectionHeaderClass}`}>Membership Type</div>
         <div className={boxClass}>
           {isEditing ? (
@@ -1054,6 +1056,12 @@ function CustomerDetail({
                 : "Corporate/Sectoral/Business"}
             </p>
           )}
+        </div>
+
+        {/* Account number – read-only, under Membership Type */}
+        <div className={`mt-3 ${sectionHeaderClass}`}>Account Number</div>
+        <div className={boxClass}>
+          <p className={textPrimary}>{customer.accountNumber || "B0000111223"}</p>
         </div>
       </div>
 

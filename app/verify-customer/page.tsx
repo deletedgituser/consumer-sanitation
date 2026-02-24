@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 const initialForm = {
+  accountNumber: "B0000111223",
   appType: "new",
   membership: "household",
   area: "Area 2-Nasipit",
@@ -53,6 +54,7 @@ export default function VerifyCustomerPage() {
       // Prepare the application data
       const applicationData = {
         recordNumber,
+        accountNumber: form.accountNumber,
         appType: form.appType.toUpperCase(),
         membership: form.membership.toUpperCase(),
         area: form.area,
@@ -301,6 +303,19 @@ export default function VerifyCustomerPage() {
                   </label>
                 </div>
               )}
+            </div>
+
+            {/* Account number – always read-only, shown under Membership */}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Account Number
+              </label>
+              <input
+                type="text"
+                value={form.accountNumber}
+                readOnly
+                className={inputClass(true)}
+              />
             </div>
 
             {/* Record location */}
