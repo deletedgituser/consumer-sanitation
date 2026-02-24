@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { signIn, useSession } from "next-auth/react";
 
 function UserIcon({ className }: { className?: string }) {
   return (
@@ -47,12 +48,43 @@ function LockIcon({ className }: { className?: string }) {
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function handleLogin(e: React.FormEvent) {
+  // redirect if already authenticated
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.push("/admin");
+    }
+  }, [status, router]);
+
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    router.push("/admin");
+    setError("");
+    setLoading(true);
+
+    try {
+      const result = await signIn("credentials", {
+        username,
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError("Invalid username or password");
+        setPassword("");
+      } else if (result?.ok) {
+        router.push("/admin");
+        router.refresh();
+      }
+    } catch (err) {
+      setError("An error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -98,6 +130,11 @@ export default function AdminLoginPage() {
               </p>
 
               <form className="mt-5 space-y-4 sm:mt-6 sm:space-y-5 lg:mt-8" onSubmit={handleLogin}>
+                {error && (
+                  <div className="rounded-lg bg-red-500/20 border border-red-500/50 px-4 py-3 text-sm text-red-200">
+                    {error}
+                  </div>
+                )}
                 <div>
                   <label htmlFor="username" className="sr-only">
                     Username
@@ -136,9 +173,10 @@ export default function AdminLoginPage() {
 
                 <button
                   type="submit"
-                  className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-base font-semibold text-white shadow-lg transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-900/50 active:scale-[0.98]"
+                  disabled={loading}
+                  className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-base font-semibold text-white shadow-lg transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-900/50 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Login
+                  {loading ? "Logging in..." : "Login"}
                 </button>
               </form>
 

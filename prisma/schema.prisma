@@ -1,22 +1,277 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// ============================================================================
+// PRISMA SCHEMA FOR CONSUMER SANITATION APPLICATION
+// ============================================================================
 
 generator client {
-  provider = "prisma-client"
-  output   = "../app/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
+// ============================================================================
+// USER & AUTHENTICATION
+// ============================================================================
+
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  username      String?   @unique
-  email         String?   @unique
-  password      String?   // This stores the HASHED password
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String?  @unique
+  password  String   // Hashed password
+  name      String?
+  role      UserRole @default(ADMIN)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  activityLogs        ActivityLog[]
+  createdApplications Application[] @relation("CreatedBy")
+  updatedApplications Application[] @relation("UpdatedBy")
+
+  @@index([username])
+  @@index([email])
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+  VIEWER
+}
+
+// ============================================================================
+// APPLICATION / CUSTOMER
+// ============================================================================
+
+model Application {
+  id             String            @id @default(cuid())
+  recordNumber   String            @unique
+  appType        ApplicationType
+  membership     MembershipType
+  status         ApplicationStatus @default(PENDING)
+  
+  // Location
+  area              String
+  district          String
+  barangay          String
+  residenceAddress  String
+  
+  // Applicant Personal Info
+  firstName      String
+  middleName     String?
+  lastName       String
+  suffixName     String?
+  birthdate      String // Stored as string to match mock data format
+  noMiddleName   Boolean @default(false)
+  gender         Gender
+  civilStatus    String
+  
+  // Spouse Information
+  spouseFirst     String?
+  spouseMiddle    String?
+  spouseLast      String?
+  spouseSuffix    String?
+  spouseBirthdate String?
+  
+  // Contact Information
+  cellphone String
+  landline  String?
+  email     String?
+  
+  // Privacy Preferences
+  privacyConsent    Boolean @default(false)
+  privacyNewsletter Boolean @default(false)
+  privacyEmail      Boolean @default(false)
+  privacySms        Boolean @default(false)
+  privacyPhone      Boolean @default(false)
+  privacySocial     Boolean @default(false)
+  
+  // Additional Details
+  cosignatory String?
+  witness     String?
+  notes       String? @db.Text
+  
+  // Payment/Receipt Info
+  orNumber   String?
+  dateIssued String?
+  
+  // Tracking
+  submittedAt   DateTime?
+  approvedAt    DateTime?
+  declinedAt    DateTime?
+  declineReason String?  @db.Text
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  createdById String?
+  updatedById String?
+  createdBy   User?   @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy   User?   @relation("UpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  
+  documents    Document[]
+  activityLogs ActivityLog[]
+
+  @@index([recordNumber])
+  @@index([status])
+  @@index([appType])
+  @@index([membership])
+  @@index([area])
+  @@index([district])
+  @@index([barangay])
+  @@index([createdAt])
+  @@index([lastName, firstName])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+enum ApplicationType {
+  NEW
+  CHANGE
+}
+
+enum MembershipType {
+  HOUSEHOLD
+  CORPORATE
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  SIGNED_UP
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+// ============================================================================
+// DOCUMENTS & ATTACHMENTS
+// ============================================================================
+
+model Document {
+  id            String       @id @default(cuid())
+  applicationId String
+  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  type       DocumentType
+  fileName   String
+  filePath   String // Storage path or URL
+  fileSize   Int // In bytes
+  mimeType   String
+  
+  uploadedAt DateTime @default(now())
+  uploadedBy String? // User ID who uploaded
+  
+  @@index([applicationId])
+  @@index([type])
+}
+
+enum DocumentType {
+  APPLICANT_PHOTO
+  SPOUSE_PHOTO
+  VALID_ID
+  PROOF_OF_RESIDENCY
+  MARRIAGE_CERTIFICATE
+  BIRTH_CERTIFICATE
+  OTHER
+}
+
+// ============================================================================
+// ACTIVITY LOGS / AUDIT TRAIL
+// ============================================================================
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  action      LogAction
+  description String   @db.Text
+  
+  // Who did it
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail String? // Cached for display
+  
+  // What was affected
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  // Additional context
+  ipAddress String?
+  userAgent String? @db.Text
+  metadata  Json? // Store additional data
+  
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([applicationId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+enum LogAction {
+  APPLICATION_CREATED
+  APPLICATION_UPDATED
+  APPLICATION_APPROVED
+  APPLICATION_DECLINED
+  APPLICATION_DELETED
+  STATUS_CHANGED
+  DOCUMENT_UPLOADED
+  DOCUMENT_DELETED
+  USER_LOGIN
+  USER_LOGOUT
+  SETTINGS_CHANGED
+}
+
+// ============================================================================
+// LOCATION MANAGEMENT
+// ============================================================================
+
+model Area {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  code      String?    @unique
+  isActive  Boolean    @default(true)
+  districts District[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([name])
+}
+
+model District {
+  id        String     @id @default(cuid())
+  name      String
+  code      String?
+  areaId    String
+  area      Area       @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  isActive  Boolean    @default(true)
+  barangays Barangay[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([name, areaId])
+  @@index([areaId])
+  @@index([name])
+}
+
+model Barangay {
+  id         String   @id @default(cuid())
+  name       String
+  code       String?
+  districtId String
+  district   District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  isActive   Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([name, districtId])
+  @@index([districtId])
+  @@index([name])
 }

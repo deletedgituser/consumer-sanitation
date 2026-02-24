@@ -8,7 +8,8 @@
     "dev:https": "next dev --hostname 0.0.0.0 --experimental-https",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prisma:seed": "node prisma/seed.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

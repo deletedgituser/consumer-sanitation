@@ -39,6 +39,77 @@ export default function VerifyCustomerPage() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [form, setForm] = useState(initialForm);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const handleSubmitApplication = async () => {
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
+
+      // Generate a record number (in production, this should come from backend)
+      const recordNumber = `${Date.now().toString().slice(-6)}`;
+
+      // Prepare the application data
+      const applicationData = {
+        recordNumber,
+        appType: form.appType.toUpperCase(),
+        membership: form.membership.toUpperCase(),
+        area: form.area,
+        district: form.district,
+        barangay: form.barangay,
+        firstName: form.firstName,
+        middleName: form.middleName,
+        lastName: form.lastName,
+        suffixName: form.suffixName || "",
+        birthdate: form.birthdate,
+        noMiddleName: !form.middleName,
+        gender: form.gender.toUpperCase(),
+        civilStatus: form.civilStatus,
+        spouseFirst: form.spouseFirst || "",
+        spouseMiddle: form.spouseMiddle || "",
+        spouseLast: form.spouseLast || "",
+        spouseSuffix: "",
+        spouseBirthdate: form.spouseBirthdate,
+        residenceAddress: form.residenceAddress,
+        cellphone: form.cellphone,
+        landline: form.landline || "",
+        email: form.email,
+        privacyConsent: true,
+        privacyNewsletter: false,
+        privacyEmail: false,
+        privacySms: false,
+        privacyPhone: false,
+        privacySocial: false,
+        cosignatory: form.cosignatory || "",
+        witness: form.witness || "",
+        status: "PENDING",
+        orNumber: form.orNumber,
+        dateIssued: form.dateIssued,
+        notes: form.notes || "",
+      };
+
+      const response = await fetch("/api/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(applicationData),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to submit application");
+      }
+
+      // Show success modal
+      setShowSubmitConfirm(false);
+      setShowConfirmation(true);
+      setIsEditing(false);
+    } catch (error) {
+      console.error("Error submitting application:", error);
+      setSubmitError("Failed to submit application. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
@@ -611,16 +682,18 @@ export default function VerifyCustomerPage() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setShowSubmitConfirm(false);
-                  setShowConfirmation(true);
-                  setIsEditing(false);
-                }}
-                className="flex-1 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-[rgba(245,158,11,0.25)]"
+                onClick={handleSubmitApplication}
+                disabled={isSubmitting}
+                className="flex-1 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Proceed
+                {isSubmitting ? "Submitting..." : "Proceed"}
               </button>
             </div>
+            {submitError && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-600">{submitError}</p>
+              </div>
+            )}
           </div>
         </div>
       )}
