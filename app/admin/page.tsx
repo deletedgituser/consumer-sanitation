@@ -823,7 +823,7 @@ export default function AdminDashboardPage() {
       if (!response.ok) throw new Error("Failed to approve application");
 
       // Step 2: Sync approved status to FastAPI backend with Bearer token
-      const fastApiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const fastApiBase = process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "http://localhost:8000";
       const authToken = (session?.user as any)?.apiToken;
 
       if (authToken) {
@@ -882,7 +882,7 @@ export default function AdminDashboardPage() {
       if (!response.ok) throw new Error("Failed to decline application");
 
       // Step 2: Sync decline status to FastAPI backend with Bearer token
-      const fastApiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const fastApiBase = process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "http://localhost:8000";
       const authToken = (session?.user as any)?.apiToken;
 
       if (authToken) {
