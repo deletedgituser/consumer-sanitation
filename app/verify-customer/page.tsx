@@ -2,36 +2,62 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import toast from "react-hot-toast";
+import { mapApiToForm, mapFormToApi } from "@/lib/account-verification";
 
+// initial structure with empty values; real data is fetched from the API
 const initialForm = {
-  appType: "new",
-  membership: "household",
-  area: "Area 2-Nasipit",
-  district: "Dist 7 - NASIPIT",
-  barangay: "KINABJANGAN",
-  firstName: "JHONELLE",
-  middleName: "AYENSA",
-  lastName: "ALMEROL",
+  appType: "",
+  membership: "",
+  area: "",
+  district: "",
+  barangay: "",
+  firstName: "",
+  middleName: "",
+  lastName: "",
   suffixName: "",
-  birthdate: "10/20/1988",
-  gender: "male",
-  civilStatus: "married",
-  spouseFirst: "Maria",
-  spouseMiddle: "Santos",
-  spouseLast: "Almerol",
-  spouseBirthdate: "01/01/1990",
-  residenceAddress: "D-1, BRGY. KINABJANGAN, NASIPIT, AGUSAN DEL NORTE",
-  cellphone: "09976059397",
-  landline: "(085) 123-4567",
-  email: "jhonelle.almerol@example.com",
-  cosignatory: "Juan Dela Cruz",
-  witness: "Pedro Reyes",
-  status: "Signed up",
-  orNumber: "896052",
-  dateIssued: "11/18/2021",
-  notes: "Application verified and approved.",
+  birthdate: "",
+  gender: "",
+  civilStatus: "",
+  spouseFirst: "",
+  spouseMiddle: "",
+  spouseLast: "",
+  spouseSuffix: "",
+  spouseBirthdate: "",
+  residenceAddress: "",
+  cellphone: "",
+  landline: "",
+  email: "",
+  cosignatory: "",
+  witness: "",
+  status: "",
+  orNumber: "",
+  dateIssued: "",
+  notes: "",
+  accountNumber: "",
+  privacyConsent: false,
+  privacyNewsletter: false,
+  privacyEmail: false,
+  privacySms: false,
+  privacyPhone: false,
+  privacySocial: false,
 };
+
+/** Normalize enum values to lowercase for consistent form handling */
+function normalizeFormData(data: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...data };
+  const enumFields = ['appType', 'membership', 'gender', 'civilStatus', 'status'];
+  
+  enumFields.forEach(field => {
+    if (typeof normalized[field] === 'string') {
+      normalized[field] = (normalized[field] as string).toLowerCase().trim();
+    }
+  });
+  
+  return normalized;
+}
 
 export default function VerifyCustomerPage() {
   const [isEditing, setIsEditing] = useState(false);
@@ -41,71 +67,49 @@ export default function VerifyCustomerPage() {
   const [form, setForm] = useState(initialForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const search = useSearchParams();
+  const accountParam = search.get("account");
+  const verifiedParam = search.get("verified") === "1";
 
   const handleSubmitApplication = async () => {
     try {
       setIsSubmitting(true);
       setSubmitError(null);
 
-      // Generate a record number (in production, this should come from backend)
-      const recordNumber = `${Date.now().toString().slice(-6)}`;
+      const apiPayload = mapFormToApi(form);
+      const accountNumberForPatch = accountParam || form.accountNumber;
 
-      // Prepare the application data
-      const applicationData = {
-        recordNumber,
-        appType: form.appType.toUpperCase(),
-        membership: form.membership.toUpperCase(),
-        area: form.area,
-        district: form.district,
-        barangay: form.barangay,
-        firstName: form.firstName,
-        middleName: form.middleName,
-        lastName: form.lastName,
-        suffixName: form.suffixName || "",
-        birthdate: form.birthdate,
-        noMiddleName: !form.middleName,
-        gender: form.gender.toUpperCase(),
-        civilStatus: form.civilStatus,
-        spouseFirst: form.spouseFirst || "",
-        spouseMiddle: form.spouseMiddle || "",
-        spouseLast: form.spouseLast || "",
-        spouseSuffix: "",
-        spouseBirthdate: form.spouseBirthdate,
-        residenceAddress: form.residenceAddress,
-        cellphone: form.cellphone,
-        landline: form.landline || "",
-        email: form.email,
-        privacyConsent: true,
-        privacyNewsletter: false,
-        privacyEmail: false,
-        privacySms: false,
-        privacyPhone: false,
-        privacySocial: false,
-        cosignatory: form.cosignatory || "",
-        witness: form.witness || "",
-        status: "PENDING",
-        orNumber: form.orNumber,
-        dateIssued: form.dateIssued,
-        notes: form.notes || "",
-      };
+      if (!accountNumberForPatch) {
+        throw new Error("No account number available for update.");
+      }
 
-      const response = await fetch("/api/applications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(applicationData),
-      });
+      // Submit to local backend API - unauthenticated edit submission
+      const response = await fetch(
+        `/api/applications/${encodeURIComponent(accountNumberForPatch)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "edit", ...apiPayload }),
+        },
+      );
 
       if (!response.ok) {
-        throw new Error("Failed to submit application");
+        const errorText = await response.text();
+        throw new Error(`API Error ${response.status}: ${errorText || response.statusText}`);
       }
 
       // Show success modal
       setShowSubmitConfirm(false);
       setShowConfirmation(true);
       setIsEditing(false);
+      toast.success("Application submitted successfully!");
     } catch (error) {
-      console.error("Error submitting application:", error);
-      setSubmitError("Failed to submit application. Please try again.");
+      const message = error instanceof Error ? error.message : "Unknown error";
+      const errorMsg = message || "Failed to submit application. Please try again.";
+      setSubmitError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -114,6 +118,72 @@ export default function VerifyCustomerPage() {
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
+  // if user navigated here without an account, show simple message
+  if (!accountParam) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-center text-lg text-slate-600">
+          No account number provided. Please return to the home page and enter your account.
+        </p>
+      </div>
+    );
+  }
+
+  if (!verifiedParam) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 px-6">
+        <p className="max-w-lg text-center text-lg text-slate-600">
+          Identity verification is required before viewing account details. Please go back and complete ID verification.
+        </p>
+      </div>
+    );
+  }
+
+  useEffect(() => {
+    if (!accountParam) return;
+    
+    const loadAndCreateApplication = async () => {
+      setLoading(true);
+      setLoadError(null);
+      
+      try {
+        // hit same‑origin path; proxy rewrites /api/v1 in dev
+        const res = await fetch(`/api/v1/accounts/${encodeURIComponent(accountParam)}`);
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        
+        // Map and normalize form data
+        const mappedData = mapApiToForm(data);
+        const normalizedData = normalizeFormData(mappedData);
+        setForm((prev) => ({ ...prev, ...normalizedData, accountNumber: accountParam }));
+        
+        // Ensure application record exists in local database
+        // Try to create it (upsert-like behavior)
+        try {
+          await fetch("/api/applications", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              accountNumber: accountParam,
+              recordNumber: data.record_number || `REC-${Date.now()}`,
+              ...mappedData,
+            }),
+          });
+        } catch {
+          // Record may already exist, which is fine - continue
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : "Failed to load account";
+        setLoadError(errorMsg);
+        toast.error(`Account Error: ${errorMsg}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadAndCreateApplication();
+  }, [accountParam]);
+
   const inputClass = (readOnly: boolean) =>
     readOnly
       ? "w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800 cursor-default read-only:outline-none"
@@ -121,9 +191,9 @@ export default function VerifyCustomerPage() {
 
   const userInitials =
     form.firstName.charAt(0) + (form.middleName ? form.middleName.charAt(0) : form.lastName.charAt(0));
+
   const displayName =
     form.firstName + (form.middleName ? " " + form.middleName.charAt(0) + "." : "");
-
   return (
     <div className="flex min-h-screen min-h-[100dvh] flex-col bg-slate-100">
       {/* Header - dark bar */}
@@ -221,6 +291,12 @@ export default function VerifyCustomerPage() {
           </div>
           <div className="mx-auto mt-2 mb-6 h-px w-16 bg-slate-300" />
 
+          {loading && (
+            <p className="text-center py-10">Loading application…</p>
+          )}
+          {loadError && (
+            <p className="text-center py-10 text-red-500">{loadError}</p>
+          )}
           <form
             id="verify-form"
             className="space-y-5"
@@ -229,6 +305,16 @@ export default function VerifyCustomerPage() {
               setShowSubmitConfirm(true);
             }}
           >
+            {/* Account number - always read-only */}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Account Number
+              </label>
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800 font-semibold">
+                {form.accountNumber || accountParam || "—"}
+              </p>
+            </div>
+
             {/* Application type */}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -236,7 +322,7 @@ export default function VerifyCustomerPage() {
               </label>
               {!isEditing ? (
                 <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800">
-                  {form.appType === "new" ? "As New Member" : "As Change/New Occupant"}
+                  {form.appType === "new" || form.appType === "NEW" ? "As New Member" : form.appType === "change" || form.appType === "CHANGE" ? "As Change/New Occupant" : form.appType || "—"}
                 </p>
               ) : (
                 <div className="flex gap-4">
@@ -245,7 +331,7 @@ export default function VerifyCustomerPage() {
                       type="radio"
                       name="appType"
                       value="new"
-                      checked={form.appType === "new"}
+                      checked={form.appType?.toLowerCase?.() === "new"}
                       onChange={() => setForm((p) => ({ ...p, appType: "new" }))}
                       className="h-4 w-4"
                     />
@@ -256,7 +342,7 @@ export default function VerifyCustomerPage() {
                       type="radio"
                       name="appType"
                       value="change"
-                      checked={form.appType === "change"}
+                      checked={form.appType?.toLowerCase?.() === "change"}
                       onChange={() => setForm((p) => ({ ...p, appType: "change" }))}
                       className="h-4 w-4"
                     />
@@ -273,7 +359,7 @@ export default function VerifyCustomerPage() {
               </label>
               {!isEditing ? (
                 <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800">
-                  {form.membership === "household" ? "Household" : "Corporate/Sectoral/Business"}
+                  {form.membership === "household" || form.membership === "HOUSEHOLD" ? "Household" : form.membership === "corporate" || form.membership === "CORPORATE" ? "Corporate/Sectoral/Business" : form.membership || "—"}
                 </p>
               ) : (
                 <div className="flex gap-4">
@@ -282,7 +368,7 @@ export default function VerifyCustomerPage() {
                       type="radio"
                       name="membership"
                       value="household"
-                      checked={form.membership === "household"}
+                      checked={form.membership?.toLowerCase?.() === "household"}
                       onChange={() => setForm((p) => ({ ...p, membership: "household" }))}
                       className="h-4 w-4"
                     />
@@ -293,7 +379,7 @@ export default function VerifyCustomerPage() {
                       type="radio"
                       name="membership"
                       value="corporate"
-                      checked={form.membership === "corporate"}
+                      checked={form.membership?.toLowerCase?.() === "corporate"}
                       onChange={() => setForm((p) => ({ ...p, membership: "corporate" }))}
                       className="h-4 w-4"
                     />
@@ -403,7 +489,7 @@ export default function VerifyCustomerPage() {
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Gender</label>
                   {!isEditing ? (
                     <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800">
-                      {form.gender === "male" ? "Male" : "Female"}
+                      {form.gender === "male" || form.gender === "MALE" ? "Male" : form.gender === "female" || form.gender === "FEMALE" ? "Female" : form.gender || "—"}
                     </p>
                   ) : (
                     <div className="flex gap-4 pt-2">
@@ -412,7 +498,7 @@ export default function VerifyCustomerPage() {
                           type="radio"
                           name="gender"
                           value="male"
-                          checked={form.gender === "male"}
+                          checked={form.gender?.toLowerCase?.() === "male"}
                           onChange={() => setForm((p) => ({ ...p, gender: "male" }))}
                           className="h-4 w-4"
                         />
@@ -423,7 +509,7 @@ export default function VerifyCustomerPage() {
                           type="radio"
                           name="gender"
                           value="female"
-                          checked={form.gender === "female"}
+                          checked={form.gender?.toLowerCase?.() === "female"}
                           onChange={() => setForm((p) => ({ ...p, gender: "female" }))}
                           className="h-4 w-4"
                         />
@@ -435,8 +521,8 @@ export default function VerifyCustomerPage() {
                 <div className="sm:col-span-2">
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Civil Status</label>
                   {!isEditing ? (
-                    <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800 capitalize">
-                      {form.civilStatus}
+                    <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-800">
+                      {form.civilStatus ? form.civilStatus.charAt(0).toUpperCase() + form.civilStatus.slice(1) : "—"}
                     </p>
                   ) : (
                     <div className="flex flex-wrap gap-3 pt-2">
@@ -446,7 +532,7 @@ export default function VerifyCustomerPage() {
                             type="radio"
                             name="civilStatus"
                             value={s.toLowerCase()}
-                            checked={form.civilStatus === s.toLowerCase()}
+                            checked={form.civilStatus?.toLowerCase?.() === s.toLowerCase()}
                             onChange={() => setForm((p) => ({ ...p, civilStatus: s.toLowerCase() }))}
                             className="h-4 w-4"
                           />
@@ -493,6 +579,17 @@ export default function VerifyCustomerPage() {
                     onChange={update("spouseLast")}
                     readOnly={!isEditing}
                     placeholder="Enter last name"
+                    className={inputClass(!isEditing)}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Spouse Suffix Name</label>
+                  <input
+                    type="text"
+                    value={form.spouseSuffix}
+                    onChange={update("spouseSuffix")}
+                    readOnly={!isEditing}
+                    placeholder="Optional"
                     className={inputClass(!isEditing)}
                   />
                 </div>

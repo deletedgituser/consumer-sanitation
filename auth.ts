@@ -3,6 +3,7 @@ import NextAuth from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import prisma from "@/lib/prisma"
 import bcrypt from "bcryptjs"
+import jwt from "jsonwebtoken"
 import type { NextAuthConfig } from "next-auth"
 
 const authConfig: NextAuthConfig = {
@@ -49,15 +50,35 @@ const authConfig: NextAuthConfig = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        token.sub = user.id     
         token.id = user.id
         token.username = (user as any).username
       }
+      
+      // Generate or regenerate JWS token for external API use (FastAPI)
+      // Do this on every token call to ensure it's always available
+      const secret = process.env.NEXTAUTH_SECRET || "your-secret-key-change-in-production"
+      const apiToken = jwt.sign(
+        {
+          sub: token.sub || token.id,
+          id: token.id,
+          username: token.username,
+        },
+        secret,
+        {
+          algorithm: "HS256",
+          expiresIn: "15m",
+        }
+      )
+      
+      token.apiToken = apiToken
       return token
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
         ;(session.user as any).username = token.username
+        ;(session.user as any).apiToken = token.apiToken  // JWS token for FastAPI auth
       }
       return session
     },
@@ -66,9 +87,9 @@ const authConfig: NextAuthConfig = {
       const { pathname } = request.nextUrl
 
       // Public routes that don't require auth
-      const publicRoutes = ["/", "/admin-login"]
+      const publicRoutes = ["/", "/admin-login", "/verify", "/verify-customer"]
       const isPublicRoute = publicRoutes.some(
-        (route) => pathname === route || pathname.startsWith("/api/auth")
+        (route) => pathname === route || pathname.startsWith("/api/auth") || pathname.startsWith("/api/v1")
       )
 
       if (isPublicRoute) return true
