@@ -204,6 +204,16 @@ export default function VerifyPage() {
     return () => stopCamera();
   }, [stopCamera]);
 
+  // Auto-redirect on successful verification
+  useEffect(() => {
+    if (isVerified) {
+      const timeout = setTimeout(() => {
+        router.push(`/verify-customer?account=${encodeURIComponent(accountNumber)}&verified=1`);
+      }, 1500); // Give user 1.5 seconds to see the success message
+      return () => clearTimeout(timeout);
+    }
+  }, [isVerified, accountNumber, router]);
+
   if (!accountNumber) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6 text-center text-slate-200">
@@ -216,79 +226,89 @@ export default function VerifyPage() {
 
   return (
     <div className="relative flex min-h-screen min-h-[100dvh] flex-col bg-slate-900">
-      <header className="relative z-20 flex min-h-[44px] items-center justify-between border-b border-white/10 bg-slate-900/80 px-4 py-3 backdrop-blur-sm sm:px-6">
-        <Link href="/" className="text-sm font-medium text-slate-300 transition-colors hover:text-white">
+      <header className="relative z-20 flex min-h-[56px] items-center justify-between border-b-2 border-blue-500 bg-slate-900/80 px-4 py-3 backdrop-blur-sm sm:px-6">
+        <Link href="/" className="text-base font-medium text-slate-300 transition-colors hover:text-white">
           ← Back
         </Link>
-        <h1 className="text-base font-semibold text-white sm:text-lg">ID Verification</h1>
-        <div className="w-14" />
+        <h1 className="text-lg font-bold text-white sm:text-xl">ID Verification</h1>
+        <div className="w-16" />
       </header>
 
       <main className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden p-2 sm:p-4">
-        <div className="mb-3 w-full max-w-4xl rounded-xl border border-white/10 bg-slate-800/70 px-4 py-3 text-sm text-slate-200">
+        <div className="mb-6 w-full max-w-4xl rounded-xl border-2 border-blue-500/30 bg-slate-800/70 px-5 py-4 text-base text-slate-200">
           <p>
-            Account: <span className="font-semibold text-white">{accountNumber}</span>
+            Account: <span className="font-bold text-white">{accountNumber}</span>
           </p>
           {isLoadingAccount ? (
-            <p className="mt-1 text-slate-300">Loading account owner information...</p>
+            <p className="mt-2 text-slate-300 font-medium">Loading account owner information...</p>
           ) : accountLoadError ? (
-            <p className="mt-1 text-red-300">{accountLoadError}</p>
+            <p className="mt-2 text-red-300 font-medium">{accountLoadError}</p>
           ) : (
-            <p className="mt-1 text-slate-300">
-              Expected owner name: <span className="font-semibold text-white">{accountOwnerName}</span>
+            <p className="mt-2 text-slate-300">
+              Expected owner name: <span className="font-bold text-white">{accountOwnerName}</span>
             </p>
           )}
         </div>
 
         {status === "permission" && (
-          <div className="flex max-w-md flex-col items-center gap-6 rounded-2xl border border-white/10 bg-slate-800/90 p-6 text-center backdrop-blur-sm sm:p-8">
-            <div className="space-y-2">
-              <h2 className="text-lg font-semibold text-white sm:text-xl">Camera access needed</h2>
-              <p className="text-sm leading-relaxed text-slate-300">
+          <div className="flex max-w-md flex-col items-center gap-6 rounded-2xl border-2 border-blue-500/30 bg-slate-800/90 p-8 text-center backdrop-blur-sm">
+            <div className="space-y-3">
+              <h2 className="text-2xl font-bold text-white">Camera Access Needed</h2>
+              <p className="text-base leading-relaxed text-slate-300">
                 Allow camera access to scan your ID and verify the name against the account owner.
+              </p>
+              <p className="text-sm leading-relaxed text-blue-300 font-medium">
+                📱 Please hold your device in <span className="font-bold">portrait mode</span> for best results.
               </p>
             </div>
             <button
               type="button"
               onClick={startCamera}
-              className="w-full rounded-xl bg-blue-600 px-6 py-4 text-base font-semibold text-white shadow-lg transition-colors hover:bg-blue-500 active:scale-[0.98]"
+              className="w-full rounded-xl bg-blue-600 px-6 py-4 text-base font-bold text-white shadow-lg transition-colors hover:bg-blue-500 active:scale-[0.98]"
               disabled={isLoadingAccount || Boolean(accountLoadError)}
             >
-              Allow camera
+              🔐 Allow Camera Access
             </button>
           </div>
         )}
 
         {status === "loading" && (
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div className="h-12 w-12 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-            <p className="text-slate-300">Opening camera...</p>
+          <div className="flex flex-col items-center gap-6 text-center">
+            <div className="h-16 w-16 animate-spin rounded-full border-3 border-blue-500 border-t-transparent" />
+            <p className="text-lg font-semibold text-slate-300">Opening camera...</p>
           </div>
         )}
 
         {status === "denied" && (
-          <div className="flex max-w-sm flex-col items-center gap-4 rounded-2xl border border-white/10 bg-slate-800/80 p-6 text-center backdrop-blur-sm">
-            <p className="text-slate-200">Camera access was denied.</p>
+          <div className="flex max-w-sm flex-col items-center gap-6 rounded-2xl border-2 border-red-500/30 bg-slate-800/80 p-8 text-center backdrop-blur-sm">
+            <div className="text-4xl">❌</div>
+            <div>
+              <p className="text-lg font-bold text-white">Camera Access Denied</p>
+              <p className="text-slate-300 text-base mt-2">Please enable camera permissions in your device settings to continue.</p>
+            </div>
             <button
               type="button"
               onClick={() => setStatus("permission")}
-              className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
+              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-base font-bold text-white hover:bg-blue-500"
             >
-              Try again
+              Try Again
             </button>
           </div>
         )}
 
         {status === "error" && (
-          <div className="flex max-w-sm flex-col items-center gap-4 rounded-2xl border border-white/10 bg-slate-800/80 p-6 text-center backdrop-blur-sm">
-            <p className="text-slate-200">Could not start camera.</p>
-            <p className="text-sm text-slate-400">{errorMessage}</p>
+          <div className="flex max-w-sm flex-col items-center gap-6 rounded-2xl border-2 border-orange-500/30 bg-slate-800/80 p-8 text-center backdrop-blur-sm">
+            <div className="text-4xl">⚠️</div>
+            <div>
+              <p className="text-lg font-bold text-white">Could Not Start Camera</p>
+              <p className="text-slate-300 text-base mt-2">{errorMessage}</p>
+            </div>
             <button
               type="button"
               onClick={() => setStatus("permission")}
-              className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
+              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-base font-bold text-white hover:bg-blue-500"
             >
-              Try again
+              Try Again
             </button>
           </div>
         )}
@@ -298,17 +318,37 @@ export default function VerifyPage() {
             <div className="relative h-[75vh] max-h-[75vh] w-full flex-shrink-0 overflow-hidden rounded-xl bg-black sm:rounded-2xl">
               <video ref={videoRef} playsInline muted autoPlay className="h-full w-full object-cover" />
               <div className="absolute inset-0 flex flex-col items-center justify-center p-3 sm:p-4">
-                <div className="relative h-full w-full max-w-xs rounded-lg border-2 border-dashed border-white/50 sm:max-w-sm">
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-center text-white/90">
-                    <span className="text-sm font-medium">Position your ID inside the frame</span>
-                    <span className="text-xs text-white/70">Capture to verify name</span>
+                {/* ID Guide Frame - Philippine ID Aspect Ratio (85.6x53.98mm ~ 16:10) */}
+                <div className="relative w-full max-w-md rounded-lg border-4 border-blue-400 bg-black/30" style={{ aspectRatio: '1.6 / 1' }}>
+                  {/* Corner markers */}
+                  <div className="absolute left-3 top-3 h-8 w-8 border-l-3 border-t-3 border-blue-400" />
+                  <div className="absolute right-3 top-3 h-8 w-8 border-r-3 border-t-3 border-blue-400" />
+                  <div className="absolute bottom-3 left-3 h-8 w-8 border-l-3 border-b-3 border-blue-400" />
+                  <div className="absolute bottom-3 right-3 h-8 w-8 border-r-3 border-b-3 border-blue-400" />
+                  
+                  {/* Center instructions */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center text-white">
+                    <svg className="h-14 w-14 text-blue-300" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 10h10v6H7z" />
+                    </svg>
+                    <div>
+                      <span className="text-base font-bold">Position ID card here</span>
+                      <p className="text-sm text-blue-200 mt-1">Keep name clearly visible</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom instruction */}
+                <div className="absolute bottom-6 left-0 right-0 flex justify-center">
+                  <div className="rounded-lg bg-black/80 px-4 py-2.5 text-sm text-blue-200 backdrop-blur-sm font-medium">
+                    Hold device in portrait mode, ensure good lighting
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="flex w-full max-w-4xl flex-shrink-0 gap-3 sm:gap-4">
-              <label className="flex min-h-[52px] flex-1 cursor-pointer items-center justify-center gap-2.5 rounded-xl border border-slate-500 bg-slate-700 py-4 text-base font-semibold text-white shadow-sm transition-colors hover:bg-slate-600 active:scale-[0.98]">
+              <label className="flex min-h-14 flex-1 cursor-pointer items-center justify-center gap-2.5 rounded-xl border-2 border-slate-500 bg-slate-700 py-4 text-base font-bold text-white shadow-sm transition-colors hover:bg-slate-600 active:scale-[0.98]">
                 <input
                   type="file"
                   accept="image/*"
@@ -322,41 +362,131 @@ export default function VerifyPage() {
                   }}
                   disabled={isVerifying || isLoadingAccount || Boolean(accountLoadError)}
                 />
-                Upload ID
+                📤 Upload ID
               </label>
 
               <button
                 type="button"
                 onClick={captureAndVerify}
                 disabled={isVerifying || isLoadingAccount || Boolean(accountLoadError)}
-                className="flex min-h-[52px] flex-1 items-center justify-center rounded-xl border border-blue-500 bg-blue-600 py-4 text-base font-semibold text-white shadow-sm transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex min-h-14 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-blue-500 bg-blue-600 py-4 text-base font-bold text-white shadow-sm transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isVerifying ? "Verifying..." : "Capture & Verify"}
+                📷 {isVerifying ? "Verifying..." : "Capture & Verify"}
               </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  router.push(`/verify-customer?account=${encodeURIComponent(accountNumber)}&verified=1`)
-                }
-                disabled={!canContinue}
-                className="flex min-h-[52px] flex-1 items-center justify-center rounded-xl bg-emerald-600 py-4 text-base font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Continue
-              </button>
+              {!isVerified && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(`/verify-customer?account=${encodeURIComponent(accountNumber)}&verified=1`)
+                  }
+                  disabled={!canContinue}
+                  className="flex min-h-14 flex-1 items-center justify-center rounded-xl bg-emerald-600 py-4 text-base font-bold text-white shadow-sm transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Continue →
+                </button>
+              )}
+
+              {isVerified && (
+                <div className="flex min-h-14 flex-1 items-center justify-center rounded-xl bg-emerald-600 py-4 text-base font-bold text-white">
+                  <div className="flex items-center gap-2">
+                    <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Redirecting...
+                  </div>
+                </div>
+              )}
             </div>
 
             {verificationMessage && (
-              <p className={`text-center text-sm ${isVerified ? "text-emerald-300" : "text-amber-300"}`}>
+              <p className={`text-center text-base font-semibold ${isVerified ? "text-emerald-300" : "text-amber-300"}`}>
                 {verificationMessage}
               </p>
             )}
 
             {ocrPreviewText && (
-              <p className="rounded-lg border border-white/10 bg-slate-800/80 p-3 text-xs text-slate-300">
-                OCR preview: {ocrPreviewText.slice(0, 220)}{ocrPreviewText.length > 220 ? "..." : ""}
+              <p className="rounded-lg border border-white/10 bg-slate-800/80 p-4 text-sm text-slate-300">
+                <span className="font-semibold">OCR Preview:</span> {ocrPreviewText.slice(0, 220)}{ocrPreviewText.length > 220 ? "..." : ""}
               </p>
             )}
+          </div>
+        )}
+
+        {/* Processing/Loading Screen */}
+        {isVerifying && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="flex flex-col items-center gap-6 rounded-3xl bg-slate-800 p-8 text-center max-w-sm">
+              <div className="relative h-20 w-20">
+                <div className="absolute inset-0 rounded-full border-4 border-slate-600 border-t-blue-500 animate-spin" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-white mb-2">Processing ID</h2>
+                <p className="text-slate-300 text-base">Analyzing your ID card...</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Verification Success Screen */}
+        {isVerified && !isVerifying && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <style>{`
+              @keyframes scaleIn {
+                0% {
+                  transform: scale(0);
+                  opacity: 0;
+                }
+                50% {
+                  transform: scale(1.1);
+                }
+                100% {
+                  transform: scale(1);
+                  opacity: 1;
+                }
+              }
+              @keyframes checkmarkDraw {
+                0% {
+                  stroke-dashoffset: 50;
+                }
+                100% {
+                  stroke-dashoffset: 0;
+                }
+              }
+              .checkmark-circle {
+                animation: scaleIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+              }
+              .checkmark-path {
+                animation: checkmarkDraw 0.5s ease-in-out 0.3s forwards;
+                stroke-dasharray: 50;
+                stroke-dashoffset: 50;
+              }
+            `}</style>
+            <div className="flex flex-col items-center gap-6 rounded-3xl bg-slate-800 p-8 text-center max-w-sm">
+              {/* Animated Checkmark Circle */}
+              <svg
+                className="checkmark-circle h-24 w-24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="10" className="text-emerald-400" fill="currentColor" fillOpacity="0.15" stroke="currentColor" strokeWidth="2" />
+                <path className="checkmark-path" d="M8 12l2 2 4-4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              
+              <div>
+                <h2 className="text-3xl font-bold text-white mb-2">Verification Complete</h2>
+                <p className="text-emerald-300 text-lg font-semibold">✓ ID name matches account owner</p>
+                <p className="text-slate-400 text-base mt-3">Redirecting to next step...</p>
+              </div>
+
+              {/* Progress indicator */}
+              <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden mt-4">
+                <div className="bg-emerald-500 h-full w-full animate-pulse" />
+              </div>
+            </div>
           </div>
         )}
       </main>
