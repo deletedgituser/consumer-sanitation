@@ -1,21 +1,60 @@
-// app/api/applications/[id]/route.ts - Get, Update, Delete single application
+// app/api/applications/[accountNumber]/route.ts - Get, Update, Delete single application (uses accountNumber parameter)
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 
-// GET /api/applications/[id] - Get single application
+/**
+ * Convert snake_case field names (from API payload) to camelCase (Prisma schema)
+ */
+function convertSnakeToCamel(obj: Record<string, any>): Record<string, any> {
+  const camelCased: Record<string, any> = {};
+
+  const fieldMap: Record<string, string> = {
+    app_type: "appType",
+    first_name: "firstName",
+    middle_name: "middleName",
+    last_name: "lastName",
+    suffix_name: "suffixName",
+    no_middle_name: "noMiddleName",
+    civil_status: "civilStatus",
+    spouse_first: "spouseFirst",
+    spouse_middle: "spouseMiddle",
+    spouse_last: "spouseLast",
+    spouse_suffix: "spouseSuffix",
+    spouse_birthdate: "spouseBirthdate",
+    residence_address: "residenceAddress",
+    privacy_consent: "privacyConsent",
+    privacy_newsletter: "privacyNewsletter",
+    privacy_email: "privacyEmail",
+    privacy_sms: "privacySms",
+    privacy_phone: "privacyPhone",
+    privacy_social: "privacySocial",
+    or_number: "orNumber",
+    date_issued: "dateIssued",
+  };
+
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = fieldMap[key] || key;
+    camelCased[camelKey] = value;
+  }
+
+  return camelCased;
+}
+
+// GET /api/applications/[accountNumber] - Get single application
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ accountNumber: string }> }
 ) {
   try {
+    const { accountNumber } = await params;
     const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const application = await prisma.application.findUnique({
-      where: { id: params.id },
+      where: { accountNumber },
       include: {
         createdBy: {
           select: {
@@ -43,8 +82,7 @@ export async function GET(
     }
 
     return NextResponse.json(application);
-  } catch (error) {
-    console.error("Error fetching application:", error);
+  } catch {
     return NextResponse.json(
       { error: "Failed to fetch application" },
       { status: 500 }
@@ -52,33 +90,29 @@ export async function GET(
   }
 }
 
-// PATCH /api/applications/[id] - Update application
+// PATCH /api/applications/[accountNumber] - Update application
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ accountNumber: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { accountNumber } = await params;
 
     const body = await request.json();
     const { action, ...updateData } = body;
 
-    // ensure we have an id from params
-    const appId = params?.id || new URL(request.url).pathname.split("/").pop();
-    console.log("PATCH application id:", appId, "params", params);
-    if (!appId) {
-      return NextResponse.json({ error: "Missing application id" }, { status: 400 });
+    // Authentication is required for approve/decline, but optional for edits
+    const session = await auth();
+    const isAdminAction = action === "approve" || action === "decline";
+
+    if (isAdminAction && !session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Check if application exists
     const existing = await prisma.application.findUnique({
-      where: { id: appId },
+      where: { accountNumber },
     });
-    // also later use appId for updates etc
-    
 
     if (!existing) {
       return NextResponse.json(
@@ -103,19 +137,34 @@ export async function PATCH(
         declinedAt: new Date(),
       };
       logAction = "APPLICATION_DECLINED";
-    } else if (action === "edit") {
+    } else if (action === "edit" || !action) {
+      statusUpdate = {
+        status: "PENDING",
+        approvedAt: null,
+        declinedAt: null,
+      };
       logAction = "APPLICATION_UPDATED";
     }
 
     // Update application
+    const convertedData = convertSnakeToCamel(updateData);
+    if (action === "edit" || !action) {
+      delete convertedData.status;
+    }
+    const updatePayload: any = {
+      ...convertedData,
+      ...statusUpdate,
+      updatedAt: new Date(),
+    };
+
+    // Only set updatedById if user is authenticated (for admin actions)
+    if (session?.user) {
+      updatePayload.updatedById = session.user.id;
+    }
+
     const application = await prisma.application.update({
-      where: { id: appId },
-      data: {
-        ...updateData,
-        ...statusUpdate,
-        updatedById: session.user.id,
-        updatedAt: new Date(),
-      },
+      where: { accountNumber },
+      data: updatePayload,
       include: {
         createdBy: {
           select: {
@@ -134,8 +183,8 @@ export async function PATCH(
       },
     });
 
-    // Log the activity
-    if (logAction) {
+    // Log the activity (only if authenticated)
+    if (logAction && session?.user) {
       await prisma.activityLog.create({
         data: {
           action: logAction as any,
@@ -155,8 +204,7 @@ export async function PATCH(
     }
 
     return NextResponse.json(application);
-  } catch (error) {
-    console.error("Error updating application:", error);
+  } catch {
     return NextResponse.json(
       { error: "Failed to update application" },
       { status: 500 }
@@ -164,12 +212,13 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/applications/[id] - Delete application
+// DELETE /api/applications/[accountNumber] - Delete application
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ accountNumber: string }> }
 ) {
   try {
+    const { accountNumber } = await params;
     const session = await auth();
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -188,15 +237,9 @@ export async function DELETE(
       );
     }
 
-    // derive id (same logic as PATCH)
-    const appId = params?.id || new URL(request.url).pathname.split("/").pop();
-    if (!appId) {
-      return NextResponse.json({ error: "Missing application id" }, { status: 400 });
-    }
-
     // Check if application exists
     const existing = await prisma.application.findUnique({
-      where: { id: appId },
+      where: { accountNumber },
     });
 
     if (!existing) {
@@ -208,7 +251,7 @@ export async function DELETE(
 
     // Delete application (cascaded deletes will handle documents)
     await prisma.application.delete({
-      where: { id: appId },
+      where: { accountNumber },
     });
 
     // Log the deletion
@@ -227,8 +270,7 @@ export async function DELETE(
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting application:", error);
+  } catch {
     return NextResponse.json(
       { error: "Failed to delete application" },
       { status: 500 }

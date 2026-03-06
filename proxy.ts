@@ -1,10 +1,10 @@
-// proxy.ts - Modern Next.js route protection (replaces middleware.ts)
+// proxy.ts - Modern Next.js route protection
 import { auth } from "@/auth"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 // Public routes that don't require authentication
-const publicRoutes = ["/", "/admin-login"]
+const publicRoutes = ["/", "/admin-login", "/verify", "/verify-customer"]
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -16,6 +16,16 @@ export async function proxy(request: NextRequest) {
 
   // Allow API auth routes
   if (pathname.startsWith("/api/auth")) {
+    return NextResponse.next()
+  }
+
+  // Allow external API proxy routes (FastAPI backend)
+  if (pathname.startsWith("/api/v1")) {
+    return NextResponse.next()
+  }
+
+  // Allow local API routes (applications, logs, etc.)
+  if (pathname.startsWith("/api/")) {
     return NextResponse.next()
   }
 

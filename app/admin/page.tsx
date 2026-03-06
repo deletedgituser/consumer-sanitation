@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { mapFormToApi } from "@/lib/account-verification";
 
 type Customer = {
   id: string;
@@ -43,886 +44,22 @@ type Customer = {
   orNumber: string;
   dateIssued: string;
   notes: string;
+  accountNumber: string;
 };
 
-const mockCustomers: Customer[] = [
-  {
-    id: "1",
-    recordNumber: "190608",
-    appType: "new",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "KINABJANGAN",
-    firstName: "JHONELLE",
-    middleName: "AYENSA",
-    lastName: "ALMEROL",
-    suffixName: "",
-    birthdate: "10/20/1988",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Maria",
-    spouseMiddle: "Santos",
-    spouseLast: "Almerol",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1990",
-    residenceAddress: "D-1, BRGY. KINABJANGAN, NASIPIT, AGUSAN DEL NORTE",
-    cellphone: "09976059397",
-    landline: "",
-    email: "jhonelle.almerol@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: false,
-    privacySms: true,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Signed up",
-    orNumber: "896052",
-    dateIssued: "11/18/2021",
-    notes: "",
-  },
-  {
-    id: "2",
-    recordNumber: "190609",
-    appType: "change",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "TALISAY",
-    firstName: "CARLOS",
-    middleName: "REYES",
-    lastName: "MAGNO",
-    suffixName: "JR.",
-    birthdate: "05/15/1985",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Ana",
-    spouseMiddle: "Lopez",
-    spouseLast: "Magno",
-    spouseSuffix: "",
-    spouseBirthdate: "08/22/1987",
-    residenceAddress: "Purok 3, Brgy. Talisay, Nasipit, Agusan del Norte",
-    cellphone: "09171234567",
-    landline: "(085) 234-5678",
-    email: "carlos.magno@example.com",
-    privacyConsent: true,
-    privacyNewsletter: false,
-    privacyEmail: true,
-    privacySms: false,
-    privacyPhone: true,
-    privacySocial: false,
-    cosignatory: "Juan Dela Cruz",
-    witness: "Pedro Reyes",
-    status: "Pending",
-    orNumber: "896053",
-    dateIssued: "02/01/2025",
-    notes: "Change of address.",
-  },
-  {
-    id: "3",
-    recordNumber: "190610",
-    appType: "new",
-    membership: "corporate",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "VILLANUEVA",
-    firstName: "MARIA",
-    middleName: "",
-    lastName: "SANTOS",
-    suffixName: "",
-    birthdate: "12/03/1992",
-    noMiddleName: true,
-    gender: "female",
-    civilStatus: "single",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Blk 5, Villanueva Subd., Butuan City",
-    cellphone: "09987654321",
-    landline: "",
-    email: "maria.santos@example.com",
-    privacyConsent: false,
-    privacyNewsletter: false,
-    privacyEmail: false,
-    privacySms: false,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "Company Rep",
-    witness: "Legal Officer",
-    status: "Approved",
-    orNumber: "896054",
-    dateIssued: "02/10/2025",
-    notes: "Corporate account.",
-  },
-  {
-    id: "4",
-    recordNumber: "190611",
-    appType: "new",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "APLAYA",
-    firstName: "RODEL",
-    middleName: "CASTILLO",
-    lastName: "BARCELONA",
-    suffixName: "",
-    birthdate: "03/14/1990",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Liza",
-    spouseMiddle: "Mendoza",
-    spouseLast: "Barcelona",
-    spouseSuffix: "",
-    spouseBirthdate: "07/08/1992",
-    residenceAddress: "Purok 5, Brgy. Aplaya, Nasipit",
-    cellphone: "09181234567",
-    landline: "",
-    email: "rodel.barcelona@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: true,
-    privacySms: false,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Pending",
-    orNumber: "896055",
-    dateIssued: "01/15/2025",
-    notes: "",
-  },
-  {
-    id: "5",
-    recordNumber: "190612",
-    appType: "change",
-    membership: "household",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "BAAN",
-    firstName: "ELENA",
-    middleName: "GARCIA",
-    lastName: "DIAZ",
-    suffixName: "",
-    birthdate: "09/22/1982",
-    noMiddleName: false,
-    gender: "female",
-    civilStatus: "widow/widower",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Baan Km. 3, Butuan City",
-    cellphone: "09221234567",
-    landline: "(085) 345-6789",
-    email: "elena.diaz@example.com",
-    privacyConsent: true,
-    privacyNewsletter: false,
-    privacyEmail: true,
-    privacySms: true,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "Rosa Martinez",
-    witness: "Teresa Cruz",
-    status: "Approved",
-    orNumber: "896056",
-    dateIssued: "12/05/2024",
-    notes: "Change of meter.",
-  },
-  {
-    id: "6",
-    recordNumber: "190613",
-    appType: "new",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "CAMAGONG",
-    firstName: "FERNANDO",
-    middleName: "ISIDRO",
-    lastName: "ESTRADA",
-    suffixName: "III",
-    birthdate: "11/30/1978",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Carmen",
-    spouseMiddle: "Ramos",
-    spouseLast: "Estrada",
-    spouseSuffix: "",
-    spouseBirthdate: "04/12/1980",
-    residenceAddress: "Sitio Camagong, Nasipit",
-    cellphone: "09331234567",
-    landline: "",
-    email: "fernando.estrada@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: false,
-    privacySms: true,
-    privacyPhone: true,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Signed up",
-    orNumber: "896057",
-    dateIssued: "10/20/2024",
-    notes: "",
-  },
-  {
-    id: "7",
-    recordNumber: "190614",
-    appType: "new",
-    membership: "household",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "AMBAGO",
-    firstName: "GRACE",
-    middleName: "LORENZO",
-    lastName: "FLORES",
-    suffixName: "",
-    birthdate: "06/17/1995",
-    noMiddleName: false,
-    gender: "female",
-    civilStatus: "single",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Ambagan, Butuan City",
-    cellphone: "09441234567",
-    landline: "",
-    email: "grace.flores@example.com",
-    privacyConsent: false,
-    privacyNewsletter: false,
-    privacyEmail: false,
-    privacySms: false,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Pending",
-    orNumber: "896058",
-    dateIssued: "02/08/2025",
-    notes: "",
-  },
-  {
-    id: "8",
-    recordNumber: "190615",
-    appType: "change",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "TALISAY",
-    firstName: "HECTOR",
-    middleName: "NAVARRO",
-    lastName: "GOMEZ",
-    suffixName: "",
-    birthdate: "02/28/1987",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Irene",
-    spouseMiddle: "Ocampo",
-    spouseLast: "Gomez",
-    spouseSuffix: "",
-    spouseBirthdate: "10/11/1989",
-    residenceAddress: "Talisay Proper, Nasipit",
-    cellphone: "09551234567",
-    landline: "(085) 456-7890",
-    email: "hector.gomez@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: true,
-    privacySms: true,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "Pablo Santos",
-    witness: "Luis Reyes",
-    status: "Approved",
-    orNumber: "896059",
-    dateIssued: "11/28/2024",
-    notes: "Transfer of service.",
-  },
-  {
-    id: "9",
-    recordNumber: "190616",
-    appType: "new",
-    membership: "corporate",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "TINIWISAN",
-    firstName: "IRMA",
-    middleName: "",
-    lastName: "HERRERA",
-    suffixName: "",
-    birthdate: "08/05/1988",
-    noMiddleName: true,
-    gender: "female",
-    civilStatus: "single",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Tiniwisan, Butuan City",
-    cellphone: "09661234567",
-    landline: "",
-    email: "irma.herrera@example.com",
-    privacyConsent: true,
-    privacyNewsletter: false,
-    privacyEmail: true,
-    privacySms: false,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "HR Manager",
-    witness: "Admin Officer",
-    status: "Pending",
-    orNumber: "896060",
-    dateIssued: "01/22/2025",
-    notes: "Business account.",
-  },
-  {
-    id: "10",
-    recordNumber: "190617",
-    appType: "new",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "KINABJANGAN",
-    firstName: "JOSE",
-    middleName: "PABLO",
-    lastName: "IGNACIO",
-    suffixName: "JR.",
-    birthdate: "01/12/1975",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Katherine",
-    spouseMiddle: "Quizon",
-    spouseLast: "Ignacio",
-    spouseSuffix: "",
-    spouseBirthdate: "05/19/1978",
-    residenceAddress: "Brgy. Kinabjangan, Nasipit",
-    cellphone: "09771234567",
-    landline: "",
-    email: "jose.ignacio@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: true,
-    privacySms: true,
-    privacyPhone: true,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Signed up",
-    orNumber: "896061",
-    dateIssued: "09/14/2024",
-    notes: "",
-  },
-  {
-    id: "11",
-    recordNumber: "190618",
-    appType: "change",
-    membership: "household",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "LEMON",
-    firstName: "KARLA",
-    middleName: "REGALADO",
-    lastName: "JIMENEZ",
-    suffixName: "",
-    birthdate: "07/03/1993",
-    noMiddleName: false,
-    gender: "female",
-    civilStatus: "married",
-    spouseFirst: "Leo",
-    spouseMiddle: "Santiago",
-    spouseLast: "Jimenez",
-    spouseSuffix: "",
-    spouseBirthdate: "12/25/1991",
-    residenceAddress: "Lemon Road, Butuan City",
-    cellphone: "09881234567",
-    landline: "",
-    email: "karla.jimenez@example.com",
-    privacyConsent: true,
-    privacyNewsletter: false,
-    privacyEmail: true,
-    privacySms: false,
-    privacyPhone: false,
-    privacySocial: true,
-    cosignatory: "",
-    witness: "",
-    status: "Pending",
-    orNumber: "896062",
-    dateIssued: "02/12/2025",
-    notes: "New construction.",
-  },
-  {
-    id: "12",
-    recordNumber: "190619",
-    appType: "new",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "APLAYA",
-    firstName: "LUIS",
-    middleName: "TORRES",
-    lastName: "KAPUNAN",
-    suffixName: "",
-    birthdate: "04/20/1984",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "separated",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Aplaya Seaside, Nasipit",
-    cellphone: "09991234567",
-    landline: "(085) 567-8901",
-    email: "luis.kapunan@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: false,
-    privacySms: true,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "Miguel Cruz",
-    witness: "Andres Lopez",
-    status: "Approved",
-    orNumber: "896063",
-    dateIssued: "10/05/2024",
-    notes: "",
-  },
-  {
-    id: "13",
-    recordNumber: "190620",
-    appType: "new",
-    membership: "household",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "VILLANUEVA",
-    firstName: "NORMA",
-    middleName: "URBANO",
-    lastName: "LAGMAN",
-    suffixName: "",
-    birthdate: "10/08/1991",
-    noMiddleName: false,
-    gender: "female",
-    civilStatus: "single",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Villanueva St., Butuan City",
-    cellphone: "09102234567",
-    landline: "",
-    email: "norma.lagman@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: true,
-    privacySms: true,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Pending",
-    orNumber: "896064",
-    dateIssued: "01/30/2025",
-    notes: "",
-  },
-  {
-    id: "14",
-    recordNumber: "190621",
-    appType: "change",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "TALISAY",
-    firstName: "OSCAR",
-    middleName: "VALDEZ",
-    lastName: "MARTINEZ",
-    suffixName: "",
-    birthdate: "12/15/1979",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Patricia",
-    spouseMiddle: "Wong",
-    spouseLast: "Martinez",
-    spouseSuffix: "",
-    spouseBirthdate: "03/27/1982",
-    residenceAddress: "Talisay Heights, Nasipit",
-    cellphone: "09112345678",
-    landline: "",
-    email: "oscar.martinez@example.com",
-    privacyConsent: true,
-    privacyNewsletter: false,
-    privacyEmail: true,
-    privacySms: false,
-    privacyPhone: true,
-    privacySocial: false,
-    cosignatory: "Roberto Tan",
-    witness: "Enrique Lim",
-    status: "Signed up",
-    orNumber: "896065",
-    dateIssued: "08/18/2024",
-    notes: "Name change.",
-  },
-  {
-    id: "15",
-    recordNumber: "190622",
-    appType: "new",
-    membership: "household",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "BAAN",
-    firstName: "PAULA",
-    middleName: "XAVIER",
-    lastName: "NAVARRO",
-    suffixName: "",
-    birthdate: "05/24/1986",
-    noMiddleName: false,
-    gender: "female",
-    civilStatus: "married",
-    spouseFirst: "Quentin",
-    spouseMiddle: "Yap",
-    spouseLast: "Navarro",
-    spouseSuffix: "",
-    spouseBirthdate: "09/10/1985",
-    residenceAddress: "Baan Riverside, Butuan City",
-    cellphone: "09123456789",
-    landline: "(085) 678-9012",
-    email: "paula.navarro@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: true,
-    privacySms: true,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Approved",
-    orNumber: "896066",
-    dateIssued: "11/02/2024",
-    notes: "",
-  },
-  {
-    id: "16",
-    recordNumber: "190623",
-    appType: "new",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "CAMAGONG",
-    firstName: "RAMON",
-    middleName: "ZAMORA",
-    lastName: "OLIVARES",
-    suffixName: "SR.",
-    birthdate: "08/11/1972",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Sofia",
-    spouseMiddle: "Abad",
-    spouseLast: "Olivares",
-    spouseSuffix: "",
-    spouseBirthdate: "02/14/1974",
-    residenceAddress: "Camagong North, Nasipit",
-    cellphone: "09134567890",
-    landline: "",
-    email: "ramon.olivares@example.com",
-    privacyConsent: true,
-    privacyNewsletter: false,
-    privacyEmail: false,
-    privacySms: true,
-    privacyPhone: true,
-    privacySocial: false,
-    cosignatory: "Tomas Reyes",
-    witness: "Vicente Cruz",
-    status: "Pending",
-    orNumber: "896067",
-    dateIssued: "02/05/2025",
-    notes: "",
-  },
-  {
-    id: "17",
-    recordNumber: "190624",
-    appType: "change",
-    membership: "household",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "AMBAGO",
-    firstName: "SANDRA",
-    middleName: "BENEDICTO",
-    lastName: "PASCUAL",
-    suffixName: "",
-    birthdate: "11/29/1994",
-    noMiddleName: false,
-    gender: "female",
-    civilStatus: "single",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Ambagan Phase 2, Butuan City",
-    cellphone: "09145678901",
-    landline: "",
-    email: "sandra.pascual@example.com",
-    privacyConsent: false,
-    privacyNewsletter: false,
-    privacyEmail: false,
-    privacySms: false,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Approved",
-    orNumber: "896068",
-    dateIssued: "12/20/2024",
-    notes: "Transfer.",
-  },
-  {
-    id: "18",
-    recordNumber: "190625",
-    appType: "new",
-    membership: "corporate",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "KINABJANGAN",
-    firstName: "TEOFILO",
-    middleName: "CRUZ",
-    lastName: "QUINTOS",
-    suffixName: "",
-    birthdate: "06/07/1981",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Uma",
-    spouseMiddle: "Dizon",
-    spouseLast: "Quintos",
-    spouseSuffix: "",
-    spouseBirthdate: "01/15/1983",
-    residenceAddress: "Industrial Area, Kinabjangan, Nasipit",
-    cellphone: "09156789012",
-    landline: "(085) 789-0123",
-    email: "teofilo.quintos@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: true,
-    privacySms: false,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "Corp Secretary",
-    witness: "Accountant",
-    status: "Signed up",
-    orNumber: "896069",
-    dateIssued: "07/22/2024",
-    notes: "Factory connection.",
-  },
-  {
-    id: "19",
-    recordNumber: "190626",
-    appType: "new",
-    membership: "household",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "TINIWISAN",
-    firstName: "URSULA",
-    middleName: "ESTRADA",
-    lastName: "RAMOS",
-    suffixName: "",
-    birthdate: "09/18/1989",
-    noMiddleName: false,
-    gender: "female",
-    civilStatus: "married",
-    spouseFirst: "Victor",
-    spouseMiddle: "Fuentes",
-    spouseLast: "Ramos",
-    spouseSuffix: "",
-    spouseBirthdate: "04/30/1987",
-    residenceAddress: "Tiniwisan Proper, Butuan City",
-    cellphone: "09167890123",
-    landline: "",
-    email: "ursula.ramos@example.com",
-    privacyConsent: true,
-    privacyNewsletter: false,
-    privacyEmail: true,
-    privacySms: true,
-    privacyPhone: true,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Pending",
-    orNumber: "896070",
-    dateIssued: "02/18/2025",
-    notes: "",
-  },
-  {
-    id: "20",
-    recordNumber: "190627",
-    appType: "change",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "APLAYA",
-    firstName: "VICENTE",
-    middleName: "GUTIERREZ",
-    lastName: "SALAZAR",
-    suffixName: "JR.",
-    birthdate: "02/03/1976",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "Wilma",
-    spouseMiddle: "Herrera",
-    spouseLast: "Salazar",
-    spouseSuffix: "",
-    spouseBirthdate: "07/19/1978",
-    residenceAddress: "Aplaya Beach Rd., Nasipit",
-    cellphone: "09178901234",
-    landline: "(085) 890-1234",
-    email: "vicente.salazar@example.com",
-    privacyConsent: true,
-    privacyNewsletter: true,
-    privacyEmail: true,
-    privacySms: true,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "Felipe Ortiz",
-    witness: "Gregorio Mendez",
-    status: "Approved",
-    orNumber: "896071",
-    dateIssued: "10/30/2024",
-    notes: "Upgrade to 3-phase.",
-  },
-  {
-    id: "21",
-    recordNumber: "190628",
-    appType: "new",
-    membership: "household",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "LEMON",
-    firstName: "ROGELIO",
-    middleName: "IMPERIAL",
-    lastName: "TAN",
-    suffixName: "",
-    birthdate: "04/12/1980",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "single",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Lemon St., Butuan City",
-    cellphone: "09180001111",
-    landline: "",
-    email: "rogelio.tan@example.com",
-    privacyConsent: false,
-    privacyNewsletter: false,
-    privacyEmail: false,
-    privacySms: false,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Declined",
-    orNumber: "896072",
-    dateIssued: "01/05/2025",
-    notes: "Incomplete documents.",
-  },
-  {
-    id: "22",
-    recordNumber: "190629",
-    appType: "change",
-    membership: "household",
-    area: "Area 2-Nasipit",
-    district: "Dist 7 - NASIPIT",
-    barangay: "TALISAY",
-    firstName: "YOLANDA",
-    middleName: "UNICO",
-    lastName: "VALDEZ",
-    suffixName: "",
-    birthdate: "11/08/1975",
-    noMiddleName: false,
-    gender: "female",
-    civilStatus: "widow/widower",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Talisay, Nasipit",
-    cellphone: "09181112222",
-    landline: "(085) 111-2233",
-    email: "yolanda.valdez@example.com",
-    privacyConsent: true,
-    privacyNewsletter: false,
-    privacyEmail: true,
-    privacySms: false,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "",
-    witness: "",
-    status: "Declined",
-    orNumber: "896073",
-    dateIssued: "02/02/2025",
-    notes: "Failed verification.",
-  },
-  {
-    id: "23",
-    recordNumber: "190630",
-    appType: "new",
-    membership: "corporate",
-    area: "Area 1-Butuan",
-    district: "Dist 1 - BUTUAN",
-    barangay: "VILLANUEVA",
-    firstName: "ZALDY",
-    middleName: "WENCESLAO",
-    lastName: "XAVIER",
-    suffixName: "",
-    birthdate: "08/20/1982",
-    noMiddleName: false,
-    gender: "male",
-    civilStatus: "married",
-    spouseFirst: "",
-    spouseMiddle: "",
-    spouseLast: "",
-    spouseSuffix: "",
-    spouseBirthdate: "01/01/1900",
-    residenceAddress: "Villanueva, Butuan City",
-    cellphone: "09182223333",
-    landline: "",
-    email: "zaldy.xavier@example.com",
-    privacyConsent: true,
-    privacyNewsletter: false,
-    privacyEmail: false,
-    privacySms: true,
-    privacyPhone: false,
-    privacySocial: false,
-    cosignatory: "Corp Rep",
-    witness: "",
-    status: "Declined",
-    orNumber: "896074",
-    dateIssued: "01/28/2025",
-    notes: "Duplicate application.",
-  },
-];
+// activity log type returned from /api/logs
+interface ActivityLog {
+  id: string;
+  action: string;
+  description: string;
+  userId?: string;
+  user?: { id: string; username?: string; name?: string } | null;
+  userEmail?: string | null;
+  applicationId?: string | null;
+  metadata?: any;
+  createdAt: string;
+}
 
-// Palette: primary #F8843F, secondary #FFF19B, tertiary #3D45AA
 const sectionHeaderClass = "rounded-t-lg bg-[#3D45AA] px-4 py-2 text-sm font-semibold text-white";
 
 function CustomerDetail({
@@ -933,7 +70,7 @@ function CustomerDetail({
   onDecline,
   onEdit,
   isEditing,
-  onDone,
+  onRequestDone,
   onCancel,
 }: {
   customer: Customer;
@@ -943,7 +80,7 @@ function CustomerDetail({
   onDecline?: () => void;
   onEdit?: () => void;
   isEditing?: boolean;
-  onDone?: (draft: Customer) => void;
+  onRequestDone?: (draft: Customer) => void;
   onCancel?: () => void;
 }) {
   const isDark = theme === "dark";
@@ -968,12 +105,21 @@ function CustomerDetail({
     : "w-full rounded border border-slate-300 bg-white text-slate-800 px-2 py-1.5 text-sm focus:border-[#3D45AA] focus:outline-none focus:ring-1 focus:ring-[#3D45AA]";
 
   const [draft, setDraft] = useState<Customer>(customer);
+  // removed modal state; handled by parent
   useEffect(() => {
     if (isEditing) setDraft(customer);
   }, [isEditing, customer]);
 
   const display = isEditing ? draft : customer;
   const setDisplay = setDraft;
+
+  const modalOverlayClass = "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4";
+  const modalPanelClass = isDark
+    ? "rounded-xl border border-slate-600 bg-slate-800 p-6 shadow-xl max-w-md w-full"
+    : "rounded-xl border border-slate-200 bg-white p-6 shadow-xl max-w-md w-full";
+  const modalTitleClass = isDark ? "text-lg font-semibold text-white" : "text-lg font-semibold text-slate-800";
+  const modalBodyClass = isDark ? "mt-2 text-slate-300" : "mt-2 text-slate-600";
+  const modalFooterClass = "mt-6 flex justify-end gap-2";
 
   return (
     <div className="space-y-1">
@@ -986,9 +132,9 @@ function CustomerDetail({
         </button>
         <div className="flex flex-wrap items-center gap-3">
           <span className={`text-sm ${isDark ? "text-[#FFF19B]" : textMuted}`}>Record #{customer.recordNumber}</span>
-          {isEditing && onDone && onCancel ? (
+          {isEditing && onRequestDone && onCancel ? (
             <div className="flex items-center gap-2 rounded-lg px-3 py-2">
-              <button type="button" onClick={() => onDone(draft)} className={doneBtnClass}>
+              <button type="button" onClick={() => onRequestDone(draft)} className={doneBtnClass}>
                 Done
               </button>
               <button type="button" onClick={onCancel} className={cancelBtnClass}>
@@ -1053,6 +199,23 @@ function CustomerDetail({
                 ? "Household"
                 : "Corporate/Sectoral/Business"}
             </p>
+          )}
+        </div>
+      </div>
+
+      {/* Account Number */}
+      <div className="mb-4">
+        <div className={sectionHeaderClass}>Account Number</div>
+        <div className={boxClass}>
+          {isEditing ? (
+            <input
+              type="text"
+              value={display.accountNumber}
+              disabled
+              className={inputClass + " opacity-50 cursor-not-allowed"}
+            />
+          ) : (
+            <p className={textPrimary}>{customer.accountNumber}</p>
           )}
         </div>
       </div>
@@ -1396,6 +559,7 @@ function ApplicationsTable({
       <table className="w-full min-w-[640px] text-left text-sm">
         <thead>
           <tr className={theme === "dark" ? "border-b border-slate-600 bg-slate-700" : "border-b border-slate-200 bg-slate-50"}>
+            <th className={thClass}>Account Number</th>
             <th className={thClass}>Record #</th>
             <th className={thClass}>Name</th>
             <th className={thClass}>Area</th>
@@ -1414,6 +578,7 @@ function ApplicationsTable({
                 theme === "dark" ? "border-slate-600" : "border-slate-100"
               }`}
             >
+              <td className={tdClass}>{c.accountNumber}</td>
               <td className={tdClass}>{c.recordNumber}</td>
               <td className={`${theme === "dark" ? "px-4 py-3 font-medium text-white" : "px-4 py-3 font-medium text-slate-800"}`}>
                 {c.firstName} {c.middleName ? c.middleName.charAt(0) + "." : ""} {c.lastName}
@@ -1473,12 +638,41 @@ export default function AdminDashboardPage() {
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [declineModalOpen, setDeclineModalOpen] = useState(false);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
+
+  // edit confirmation state
+  const [doneConfirmOpen, setDoneConfirmOpen] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<Customer | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   
   // API state
   const [applications, setApplications] = useState<Customer[]>([]);
   const [isLoadingApplications, setIsLoadingApplications] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // logs state
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
+
+  // shared table classes for log view
+  const thClassMain = theme === "dark" ? "px-4 py-3 font-semibold text-white" : "px-4 py-3 font-semibold text-slate-700";
+  const tdClassMain = theme === "dark" ? "px-4 py-3 text-white" : "px-4 py-3 text-slate-800";
+  const tdMutedClassMain = theme === "dark" ? "px-4 py-3 text-slate-200" : "px-4 py-3 text-slate-600";
+
+  const fetchLogs = async () => {
+    try {
+      setIsLoadingLogs(true);
+      setLogsError(null);
+      const response = await fetch("/api/logs");
+      if (!response.ok) throw new Error("Failed to fetch logs");
+      const data: ActivityLog[] = await response.json();
+      setLogs(data);
+    } catch {
+      setLogsError("Failed to load logs");
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
 
   const getEffectiveStatus = (c: Customer) => statusOverrides[c.id] ?? c.status;
 
@@ -1537,14 +731,14 @@ export default function AdminDashboardPage() {
         orNumber: app.orNumber,
         dateIssued: app.dateIssued,
         notes: app.notes || "",
+        accountNumber: app.accountNumber || "",
       }));
       
       setApplications(mappedData);
-    } catch (err) {
-      console.error("Error fetching applications:", err);
+    } catch {
       setError("Failed to load applications");
-      // Fallback to mock data on error
-      setApplications(mockCustomers);
+      // Removed fallback to mock data on error
+      // setApplications(mockCustomers);
     } finally {
       setIsLoadingApplications(false);
     }
@@ -1592,6 +786,13 @@ export default function AdminDashboardPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // fetch logs when logs view is selected
+  useEffect(() => {
+    if (activeNav === "logs" && status === "authenticated") {
+      fetchLogs();
+    }
+  }, [activeNav, status]);
+
   const showApplications =
     activeNav === "dashboard" || activeNav === "pending" || activeNav === "approved" || activeNav === "declined";
   const listCustomers =
@@ -1612,13 +813,48 @@ export default function AdminDashboardPage() {
 
   const handleApprove = async (c: Customer) => {
     try {
-      const response = await fetch(`/api/applications/${c.id}`, {
+      // Step 1: Approve in local backend
+      const response = await fetch(`/api/applications/${c.accountNumber}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "approve" }),
       });
 
       if (!response.ok) throw new Error("Failed to approve application");
+
+      // Step 2: Sync approved status to FastAPI backend with Bearer token
+      const fastApiBase = process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "http://localhost:8000";
+      const authToken = (session?.user as any)?.apiToken;
+
+      if (authToken) {
+        const sourceData = customerEdits[c.id] ?? c;
+        const syncPayload = {
+          ...mapFormToApi(sourceData as unknown as Record<string, unknown>),
+          status: "APPROVED",
+        };
+
+        try {
+          const syncResponse = await fetch(
+            `${fastApiBase}/api/v1/accounts/${encodeURIComponent(c.accountNumber)}`,
+            {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`,
+              },
+              body: JSON.stringify(syncPayload),
+            },
+          );
+
+          if (!syncResponse.ok) {
+            alert(`Warning: Approved locally but FastAPI sync failed (${syncResponse.status}). Please check manually.`);
+          }
+        } catch {
+          alert("Warning: Approved locally but failed to sync to FastAPI backend. Please check manually.");
+        }
+      } else {
+        alert("Warning: Admin session token not available. Application approved locally only.");
+      }
 
       setStatusOverrides((prev) => ({ ...prev, [c.id]: "Approved" }));
       setSelected(null);
@@ -1627,15 +863,17 @@ export default function AdminDashboardPage() {
       
       // Refresh applications
       await fetchApplications();
-    } catch (err) {
-      console.error("Error approving application:", err);
+      // Refresh logs after action
+      await fetchLogs();
+    } catch {
       alert("Failed to approve application. Please try again.");
     }
   };
 
   const handleDecline = async (c: Customer) => {
     try {
-      const response = await fetch(`/api/applications/${c.id}`, {
+      // Step 1: Decline in local backend
+      const response = await fetch(`/api/applications/${c.accountNumber}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "decline" }),
@@ -1643,21 +881,59 @@ export default function AdminDashboardPage() {
 
       if (!response.ok) throw new Error("Failed to decline application");
 
+      // Step 2: Sync decline status to FastAPI backend with Bearer token
+      const fastApiBase = process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "http://localhost:8000";
+      const authToken = (session?.user as any)?.apiToken;
+
+      if (authToken) {
+        const syncPayload = {
+          status: "DECLINED",
+        };
+
+        try {
+          const syncResponse = await fetch(
+            `${fastApiBase}/api/v1/accounts/${encodeURIComponent(c.accountNumber)}`,
+            {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`,
+              },
+              body: JSON.stringify(syncPayload),
+            },
+          );
+
+          if (!syncResponse.ok) {
+            alert(`Warning: Declined locally but FastAPI sync failed (${syncResponse.status}). Please check manually.`);
+          }
+        } catch {
+          alert("Warning: Declined locally but failed to sync to FastAPI backend. Please check manually.");
+        }
+      } else {
+        alert("Warning: Admin session token not available. Application declined locally only.");
+      }
+
       setStatusOverrides((prev) => ({ ...prev, [c.id]: "Declined" }));
       setSelected(null);
       setDeclineModalOpen(false);
       
       // Refresh applications
       await fetchApplications();
-    } catch (err) {
-      console.error("Error declining application:", err);
+      // Refresh logs after action
+      await fetchLogs();
+    } catch {
       alert("Failed to decline application. Please try again.");
     }
   };
 
+  const handleDraftRequest = (draft: Customer) => {
+    setPendingDraft(draft);
+    setDoneConfirmOpen(true);
+  };
+
   const handleDoneEdit = async (draft: Customer) => {
     try {
-      const response = await fetch(`/api/applications/${draft.id}`, {
+      const response = await fetch(`/api/applications/${draft.accountNumber}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1680,8 +956,9 @@ export default function AdminDashboardPage() {
       
       // Refresh applications
       await fetchApplications();
-    } catch (err) {
-      console.error("Error updating application:", err);
+      // Refresh logs after edit
+      await fetchLogs();
+    } catch {
       alert("Failed to update application. Please try again.");
     }
   };
@@ -1772,6 +1049,38 @@ export default function AdminDashboardPage() {
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
               >
                 Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit confirmation modal */}
+      {doneConfirmOpen && pendingDraft && (
+        <div className={modalOverlayClass} onClick={() => setDoneConfirmOpen(false)}>
+          <div className={modalPanelClass} onClick={(e) => e.stopPropagation()}>
+            <h3 className={modalTitleClass}>Confirm edits</h3>
+            <p className={modalBodyClass}>Save the changes made to this application?</p>
+            <div className={modalFooterClass}>
+              <button
+                type="button"
+                onClick={() => setDoneConfirmOpen(false)}
+                className={theme === "dark" ? "rounded-lg border border-slate-500 bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600" : "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (pendingDraft) {
+                    await handleDoneEdit(pendingDraft);
+                  }
+                  setDoneConfirmOpen(false);
+                  setPendingDraft(null);
+                }}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+              >
+                Save
               </button>
             </div>
           </div>
@@ -1925,7 +1234,7 @@ export default function AdminDashboardPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200 ease-out hover:scale-105 active:scale-95 ${
+              className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200 ease-out hover:scale-105 hover:bg-[#F8843F] active:scale-95 ${
                 theme === "dark" ? "text-slate-300 hover:bg-slate-700" : "text-slate-600 hover:bg-slate-100"
               }`}
               aria-label="Notifications"
@@ -2059,7 +1368,7 @@ export default function AdminDashboardPage() {
                   theme={theme}
                   isEditing={detailEditMode}
                   onEdit={effectiveSelected.status === "Pending" ? () => setDetailEditMode(true) : undefined}
-                  onDone={handleDoneEdit}
+                  onRequestDone={handleDraftRequest}
                   onCancel={() => setDetailEditMode(false)}
                   onApprove={
                     effectiveSelected.status === "Pending"
@@ -2190,9 +1499,53 @@ export default function AdminDashboardPage() {
                 >
                   Logs
                 </h2>
-                <p className={theme === "dark" ? "text-slate-300" : "text-slate-600"}>
-                  Activity and audit logs will appear here.
-                </p>
+                {isLoadingLogs ? (
+                  <div className="flex justify-center items-center py-8">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                    <p className="ml-3 text-slate-500">Loading logs...</p>
+                  </div>
+                ) : logsError ? (
+                  <p className="text-red-600">{logsError}</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className={theme === "dark" ? "border-b border-slate-600 bg-slate-700" : "border-b border-slate-200 bg-slate-50"}>
+                          <th className={thClassMain}>Time</th>
+                          <th className={thClassMain}>User</th>
+                          <th className={thClassMain}>Action</th>
+                          <th className={thClassMain}>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {logs.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className={tdMutedClassMain}>
+                              No logs available.
+                            </td>
+                          </tr>
+                        ) : (
+                          logs.map((log) => (
+                            <tr
+                              key={log.id}
+                              className={`border-b transition-all duration-200 ease-out hover:bg-[#FFF19B]/20 ${
+                                theme === "dark" ? "border-slate-600" : "border-slate-100"
+                              }`}
+                            >
+                              <td className={tdMutedClassMain}>{new Date(log.createdAt).toLocaleString()}</td>
+                              <td className={tdClassMain}>{log.user?.name || log.user?.username || log.userEmail || "—"}</td>
+                              <td className={tdClassMain}>{(() => {
+                                const a = log.action.replace(/^APPLICATION_/, "").replace(/_/g, " ");
+                                return a.charAt(0).toUpperCase() + a.slice(1).toLowerCase();
+                              })()}</td>
+                              <td className={tdClassMain}>{log.description}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             ) : (
               <div

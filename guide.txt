@@ -1,0 +1,97 @@
+## 6) Authentication Rules (Important)
+- Every protected request must send:
+
+```http
+Authorization: Bearer <JWT>
+```
+
+- Token must be a **signed JWS** (3 JWT parts separated by dots).
+- Token is verified with `NEXTAUTH_SECRET` using `HS256` by default.
+- Expired or invalid tokens return `401 Unauthorized`.
+
+---
+
+## 7) Endpoint 1 - Fetch Account/Application
+### Route
+- **Method:** `GET`
+- **Path:** `/api/v1/accounts/{account_number}`
+
+### Purpose
+Returns full application/customer info for the given unique `account_number`.
+
+### Example Request
+```bash
+curl -X GET "http://localhost:8000/api/v1/accounts/ACC-0001" \
+  -H "Authorization: Bearer <JWT>"
+```
+
+### Success Response (`200`)
+Returns full record (sample fields):
+- `account_number`
+- `record_number`
+- `user_id_from_auth`
+- `app_type`, `membership`, `status`
+- location fields (`area`, `district`, `barangay`, `residence_address`)
+- applicant/customer fields (`first_name`, `last_name`, `birthdate`, etc.)
+- privacy preferences
+- timestamps
+
+### Common Errors
+- `401` → Missing/invalid/expired token
+- `404` → `account_number` not found
+
+---
+
+## 8) Endpoint 2 - Update Account/Application
+### Route
+- **Method:** `PATCH`
+- **Path:** `/api/v1/accounts/{account_number}`
+
+### Purpose
+Updates one or more allowed fields for an existing account application.
+
+### Security Behavior
+- Requires valid JWT.
+- Owner matching is **not enforced** currently (as requested): any valid token can patch.
+
+### Example Request
+```bash
+curl -X PATCH "http://localhost:8000/api/v1/accounts/ACC-0001" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <JWT>" \
+  -d '{
+    "status": "APPROVED",
+    "notes": "Reviewed and approved",
+    "district": "District 3"
+  }'
+```
+
+### Valid Patch Fields (summary)
+You may send any subset of these:
+- workflow: `status`, `app_type`, `membership`
+- location: `area`, `district`, `barangay`, `residence_address`
+- applicant: `first_name`, `middle_name`, `last_name`, `suffix_name`, `birthdate`, `gender`, `civil_status`, `no_middle_name`
+- spouse: `spouse_first`, `spouse_middle`, `spouse_last`, `spouse_suffix`, `spouse_birthdate`
+- contact: `cellphone`, `landline`, `email`
+- consent: `privacy_consent`, `privacy_newsletter`, `privacy_email`, `privacy_sms`, `privacy_phone`, `privacy_social`
+- additional: `cosignatory`, `witness`, `notes`, `or_number`, `date_issued`, `decline_reason`
+
+### Enum Values
+- `status`: `PENDING`, `APPROVED`, `DECLINED`, `SIGNED_UP`
+- `app_type`: `NEW`, `CHANGE`
+- `membership`: `HOUSEHOLD`, `CORPORATE`
+- `gender`: `MALE`, `FEMALE`
+
+### Common Errors
+- `401` → Missing/invalid/expired token
+- `404` → `account_number` not found
+- `422` → Invalid patch body (e.g., wrong enum value, empty payload)
+
+---
+
+## 9) Quick Test Flow
+1. Start XAMPP MySQL.
+2. Run `python scripts/migrate_and_seed.py`.
+3. Run `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`.
+4. Call `GET /api/v1/accounts/ACC-0001` with bearer token.
+5. Call `PATCH /api/v1/accounts/ACC-0001` with bearer token and JSON body.

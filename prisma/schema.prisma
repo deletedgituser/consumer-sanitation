@@ -46,6 +46,7 @@ enum UserRole {
 
 model Application {
   id             String            @id @default(cuid())
+  accountNumber String   @unique
   recordNumber   String            @unique
   appType        ApplicationType
   membership     MembershipType

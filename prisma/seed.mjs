@@ -29,6 +29,7 @@ async function main() {
   const applications = [
     {
       recordNumber: '190608',
+      accountNumber: 'ACC-190608',
       appType: 'NEW',
       membership: 'HOUSEHOLD',
       area: 'Area 2-Nasipit',
@@ -66,6 +67,7 @@ async function main() {
     },
     {
       recordNumber: '190609',
+      accountNumber: 'ACC-190609',
       appType: 'CHANGE',
       membership: 'HOUSEHOLD',
       area: 'Area 2-Nasipit',
@@ -103,6 +105,7 @@ async function main() {
     },
     {
       recordNumber: '190610',
+      accountNumber: 'ACC-190610',
       appType: 'NEW',
       membership: 'CORPORATE',
       area: 'Area 1-Butuan',

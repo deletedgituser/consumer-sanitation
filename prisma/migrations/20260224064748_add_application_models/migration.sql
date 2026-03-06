@@ -59,8 +59,10 @@ CREATE TABLE `Application` (
     `updatedAt` DATETIME(3) NOT NULL,
     `createdById` VARCHAR(191) NULL,
     `updatedById` VARCHAR(191) NULL,
+    `accountNumber` VARCHAR(191) NOT NULL,
 
     UNIQUE INDEX `Application_recordNumber_key`(`recordNumber`),
+    UNIQUE INDEX `Application_accountNumber_key`(`accountNumber`),
     INDEX `Application_recordNumber_idx`(`recordNumber`),
     INDEX `Application_status_idx`(`status`),
     INDEX `Application_appType_idx`(`appType`),
