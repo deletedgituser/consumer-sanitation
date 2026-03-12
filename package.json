@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:network": "next dev --hostname 0.0.0.0",
-    "dev:https": "next dev --hostname 0.0.0.0 --experimental-https",
+    "dev:https": "next dev --hostname 0.0.0.0 --experimental-https --experimental-https-key certificates/localhost-key.pem --experimental-https-cert certificates/localhost.pem",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

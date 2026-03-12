@@ -84,21 +84,19 @@ export default function Home() {
   }
 
   return (
-    <div className="relative flex min-h-screen min-h-[100dvh] flex-col items-center justify-center overflow-x-hidden overflow-y-auto bg-gray-400 p-3 py-5 sm:p-5 sm:py-6 md:flex-row md:p-6 lg:p-8 [padding:max(0.75rem,env(safe-area-inset-top))_max(0.75rem,env(safe-area-inset-right))_max(0.75rem,env(safe-area-inset-bottom))_max(0.75rem,env(safe-area-inset-left))]">
-      {/* plain white background – video removed */}
-      {/* Card wrapper – centered on mobile, glass style */}
-      <div className="relative z-10 flex w-full max-w-4xl flex-1 flex-col items-center justify-center">
-        <div className="login-card relative flex w-full max-w-4xl flex-col overflow-hidden rounded-xl shadow-xl sm:rounded-2xl md:flex-row">
+    <div className="relative flex min-h-screen min-h-[100dvh] w-full flex-col items-center justify-center overflow-x-hidden overflow-y-auto bg-[#f5f4f0] p-3 sm:p-5 md:p-6 lg:p-8 [padding:max(0.75rem,env(safe-area-inset-top))_max(0.75rem,env(safe-area-inset-right))_max(0.75rem,env(safe-area-inset-bottom))_max(0.75rem,env(safe-area-inset-left))]">
+      <div className="relative z-10 flex w-full max-w-2xl flex-1 flex-col items-center justify-center">
+        <div className="login-card relative flex w-full max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl sm:max-w-none sm:rounded-3xl sm:flex-row">
           {/* Left panel – logo */}
-          <div className="flex min-h-[140px] w-full shrink-0 items-center justify-center p-4 sm:min-h-[180px] sm:p-6 md:min-h-0 md:w-[42%] md:min-w-0 md:shrink lg:w-[45%] lg:min-w-[260px] lg:p-8 login-card-left">
-            <div className="relative flex h-full w-full max-w-[200px] items-center justify-center sm:max-w-[260px] md:max-w-none md:min-h-[280px]">
+          <div className="flex min-h-[100px] w-full shrink-0 items-center justify-center p-4 sm:min-h-[140px] sm:p-6 md:w-[38%] md:min-h-[260px] lg:p-8 login-card-left">
+            <div className="relative flex h-full w-full max-w-[140px] items-center justify-center sm:max-w-[180px] md:max-w-[200px]">
               <Image
                 src="/logo_aneco.png"
                 alt="ANECO - Agusan Del Norte Electric Cooperative"
-                width={280}
-                height={280}
+                width={200}
+                height={200}
                 className="h-auto w-full object-contain"
-                sizes="(max-width: 480px) 180px, (max-width: 640px) 220px, (max-width: 768px) 260px, 280px"
+                sizes="(max-width: 380px) 120px, (max-width: 480px) 140px, (max-width: 768px) 180px, 200px"
                 priority
               />
             </div>
@@ -106,36 +104,36 @@ export default function Home() {
 
           {/* Right panel – form */}
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10 lg:px-10 lg:py-12 login-card-right">
-            <div className="w-full max-w-sm">
-              <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl lg:text-3xl">
+            <div className="w-full max-w-xs sm:max-w-[320px]">
+              <h1 className="text-lg font-medium tracking-tight text-neutral-900 text-center sm:text-xl sm:text-left md:text-2xl" style={{ letterSpacing: "-0.02em" }}>
                 Account Verification
               </h1>
-              <p className="mt-1.5 text-sm text-slate-300 sm:mt-2">
-                Enter your account number to get started.
+              <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 text-center sm:mt-2 sm:text-left">
+                Enter your account number to continue.
               </p>
 
-              <form className="mt-5 space-y-4 sm:mt-6 sm:space-y-5 lg:mt-8" onSubmit={handleVerify}>
+              <form className="mt-4 space-y-4 sm:mt-6 sm:space-y-5" onSubmit={handleVerify}>
                 <div>
-                  <label htmlFor="email" className="sr-only">
+                  <label htmlFor="account" className="sr-only">
                     Account number
                   </label>
-                  <div className="flex min-h-[44px] items-center gap-3 rounded-lg border border-white/20 bg-white/10 px-3 py-2.5 backdrop-blur-sm transition-colors focus-within:border-blue-400/60 focus-within:ring-2 focus-within:ring-blue-400/30">
-                    <UserIcon className="h-5 w-5 shrink-0 text-slate-400" />
+                  <div className="flex min-h-[44px] items-center gap-3 rounded-xl border border-neutral-200/80 bg-white/90 px-3 py-2.5 transition-all duration-200 focus-within:border-neutral-300 focus-within:shadow-md focus-within:shadow-neutral-200/50 focus-within:ring-2 focus-within:ring-neutral-200/60 sm:min-h-[48px] sm:rounded-2xl sm:px-4">
+                    <UserIcon className="h-5 w-5 shrink-0 text-neutral-400" />
                     <input
-                      id="email"
+                      id="account"
                       type="text"
-                      // removed numeric inputMode so mobile shows default keyboard
-                      placeholder="Enter your Account Number"
+                      placeholder="Account number"
                       value={account}
                       onChange={(e) => setAccount(e.target.value)}
-                      className="w-full min-w-0 border-0 bg-transparent text-base text-white placeholder:text-slate-400 focus:outline-none focus:ring-0 [font-size:16px]"
+                      className="w-full min-w-0 border-0 bg-transparent text-base text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-0 [font-size:16px]"
+                      autoComplete="off"
                     />
                   </div>
                 </div>
 
                 <button
                   type="submit"
-                  className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-3 text-base font-semibold text-white shadow-lg transition-colors hover:bg-[rgba(245,158,11,0.25)] focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-900/50 active:scale-[0.98]"
+                  className="flex min-h-[44px] w-full items-center justify-center rounded-xl bg-neutral-900 px-4 py-3 text-base font-medium text-white shadow-sm transition-all duration-200 hover:bg-neutral-800 hover:shadow-md active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-neutral-400 focus:ring-offset-2 sm:min-h-[48px] sm:rounded-2xl"
                 >
                   Verify
                 </button>

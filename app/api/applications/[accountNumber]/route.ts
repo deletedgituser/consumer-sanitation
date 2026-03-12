@@ -31,6 +31,7 @@ function convertSnakeToCamel(obj: Record<string, any>): Record<string, any> {
     privacy_social: "privacySocial",
     or_number: "orNumber",
     date_issued: "dateIssued",
+    decline_reason: "declineReason",
   };
 
   for (const [key, value] of Object.entries(obj)) {
@@ -148,11 +149,62 @@ export async function PATCH(
 
     // Update application
     const convertedData = convertSnakeToCamel(updateData);
-    if (action === "edit" || !action) {
-      delete convertedData.status;
+
+    // Only keep fields that actually exist on the Application model to avoid Prisma errors
+    const allowedKeys = new Set([
+      "appType",
+      "membership",
+      "status",
+      "area",
+      "district",
+      "barangay",
+      "residenceAddress",
+      "firstName",
+      "middleName",
+      "lastName",
+      "suffixName",
+      "birthdate",
+      "noMiddleName",
+      "gender",
+      "civilStatus",
+      "spouseFirst",
+      "spouseMiddle",
+      "spouseLast",
+      "spouseSuffix",
+      "spouseBirthdate",
+      "cellphone",
+      "landline",
+      "email",
+      "privacyConsent",
+      "privacyNewsletter",
+      "privacyEmail",
+      "privacySms",
+      "privacyPhone",
+      "privacySocial",
+      "cosignatory",
+      "witness",
+      "notes",
+      "orNumber",
+      "dateIssued",
+      "submittedAt",
+      "approvedAt",
+      "declinedAt",
+      "declineReason",
+    ]);
+
+    const filteredData: Record<string, any> = {};
+    for (const [key, value] of Object.entries(convertedData)) {
+      if (allowedKeys.has(key)) {
+        filteredData[key] = value;
+      }
     }
+
+    if (action === "edit" || !action) {
+      delete filteredData.status;
+    }
+
     const updatePayload: any = {
-      ...convertedData,
+      ...filteredData,
       ...statusUpdate,
       updatedAt: new Date(),
     };
@@ -183,6 +235,40 @@ export async function PATCH(
       },
     });
 
+    // Create a single DB notification when admin approves/declines (only once per application)
+    const prevStatus = (existing.status ?? "").toString();
+    const newStatus = (application.status ?? "").toString();
+    const didStatusChange = prevStatus !== newStatus;
+    const shouldCreateStatusNotification =
+      didStatusChange && (action === "approve" || action === "decline") && !!session?.user;
+
+    if (shouldCreateStatusNotification) {
+      const notifType = newStatus === "APPROVED" ? "APPROVED" : newStatus === "DECLINED" ? "DECLINED" : null;
+      const notifMessage =
+        newStatus === "APPROVED"
+          ? "Application approved"
+          : newStatus === "DECLINED"
+            ? "Application declined"
+            : null;
+
+      if (notifType && notifMessage) {
+        const alreadyExists = await prisma.notification.findFirst({
+          where: { applicationId: application.id, type: notifType as any },
+          select: { id: true },
+        });
+
+        if (!alreadyExists) {
+          await prisma.notification.create({
+            data: {
+              applicationId: application.id,
+              type: notifType as any,
+              message: notifMessage,
+            },
+          });
+        }
+      }
+    }
+
     // Log the activity (only if authenticated)
     if (logAction && session?.user) {
       await prisma.activityLog.create({
@@ -204,7 +290,8 @@ export async function PATCH(
     }
 
     return NextResponse.json(application);
-  } catch {
+  } catch (error) {
+    console.error("Failed to update application", error);
     return NextResponse.json(
       { error: "Failed to update application" },
       { status: 500 }

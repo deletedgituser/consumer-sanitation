@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { mapApiToForm, mapFormToApi } from "@/lib/account-verification";
 
@@ -49,31 +49,152 @@ const initialForm = {
 function normalizeFormData(data: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...data };
   const enumFields = ['appType', 'membership', 'gender', 'civilStatus', 'status'];
-  
+
   enumFields.forEach(field => {
     if (typeof normalized[field] === 'string') {
       normalized[field] = (normalized[field] as string).toLowerCase().trim();
     }
   });
-  
+
   return normalized;
 }
 
 export default function VerifyCustomerPage() {
+  const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [lastChangeSummary, setLastChangeSummary] = useState<{ label: string; before: string; after: string }[]>([]);
   const [form, setForm] = useState(initialForm);
+  const [initialFormData, setInitialFormData] = useState(initialForm);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [applicationFromDb, setApplicationFromDb] = useState<Record<string, unknown> | null>(null);
+  const [defaultFormFromApi, setDefaultFormFromApi] = useState<typeof initialForm>(initialForm);
+  const fetchIdRef = useRef(0);
   const search = useSearchParams();
   const accountParam = search.get("account");
+  const accountForApi = accountParam || form.accountNumber;
+  const modeParam = (search.get("mode") ?? "").toLowerCase();
+  const scopeParam = (search.get("scope") ?? "").toLowerCase();
+  const fieldsParam = (search.get("fields") ?? "").toString();
+  const allowEditingFromFlow = modeParam === "edit";
+  const effectiveScope = (scopeParam === "name" || scopeParam === "address" || scopeParam === "contact" || scopeParam === "all")
+    ? scopeParam
+    : "all";
+  const customFieldsSet = useMemo(() => {
+    const parts = fieldsParam.split(",").map((s) => s.trim()).filter(Boolean);
+    return new Set(parts);
+  }, [fieldsParam]);
+
+  useEffect(() => {
+    // If user came from the selection page with mode=edit, start in edit mode.
+    if (allowEditingFromFlow) setIsEditing(true);
+    if (modeParam === "view") setIsEditing(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowEditingFromFlow, modeParam]);
+
+  const canEditField = (field: keyof typeof initialForm) => {
+    if (!allowEditingFromFlow) return false;
+    if (field === "membership") return false; // locked always
+    if (scopeParam === "custom") return customFieldsSet.has(field as string);
+    if (effectiveScope === "all") return true;
+    if (effectiveScope === "name") return ["firstName", "middleName", "lastName", "suffixName"].includes(field as string);
+    if (effectiveScope === "address") return ["area", "district", "barangay", "residenceAddress"].includes(field as string);
+    if (effectiveScope === "contact") return ["cellphone", "landline", "email"].includes(field as string);
+    return true;
+  };
+
+  const persistNotification = useCallback(
+    async (message: string, type: "PENDING" | "APPROVED" | "DECLINED" | "INFO") => {
+      if (!accountForApi) return;
+      try {
+        fetchIdRef.current++;
+        await fetch(`/api/applications/${encodeURIComponent(accountForApi)}/notifications`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, type }),
+        });
+      } catch {
+        // non-blocking
+      }
+    },
+    [accountForApi]
+  );
   const verifiedParam = search.get("verified") === "1";
 
+  const formFieldsForCompare = [
+    "area", "district", "barangay", "firstName", "middleName", "lastName", "suffixName",
+    "birthdate", "gender", "civilStatus", "spouseFirst", "spouseMiddle", "spouseLast", "spouseSuffix", "spouseBirthdate",
+    "residenceAddress", "cellphone", "landline", "email", "cosignatory", "witness", "status", "orNumber", "dateIssued", "notes",
+  ] as const;
+  const enumComparableFields = new Set<string>(["gender", "civilStatus", "status"]);
+  const comparableValue = (key: string, value: unknown) => {
+    const str = String(value ?? "");
+    return enumComparableFields.has(key) ? str.trim().toUpperCase() : str.trim();
+  };
+  const hasFormChanges = formFieldsForCompare.some((key) => {
+    const k = key as string;
+    if (!canEditField(key as keyof typeof initialForm)) return false;
+    return comparableValue(k, form[key]) !== comparableValue(k, initialFormData[key]);
+  });
+
+  const fieldLabels: Record<(typeof formFieldsForCompare)[number], string> = {
+    area: "Area",
+    district: "District",
+    barangay: "Barangay",
+    firstName: "First Name",
+    middleName: "Middle Name",
+    lastName: "Last Name",
+    suffixName: "Suffix Name",
+    birthdate: "Birthdate",
+    gender: "Gender",
+    civilStatus: "Civil Status",
+    spouseFirst: "Spouse First Name",
+    spouseMiddle: "Spouse Middle Name",
+    spouseLast: "Spouse Last Name",
+    spouseSuffix: "Spouse Suffix",
+    spouseBirthdate: "Spouse Birthdate",
+    residenceAddress: "Residence Address",
+    cellphone: "Cellphone No.",
+    landline: "Landline No.",
+    email: "Email Address",
+    cosignatory: "Co-signatory",
+    witness: "Witness",
+    status: "Status",
+    orNumber: "OR Number",
+    dateIssued: "Date Issued",
+    notes: "Notes",
+  };
+
+  // No notifications or logout shown on edit page (per UX).
+
   const handleSubmitApplication = async () => {
+    if (!hasFormChanges) {
+      setShowSubmitConfirm(false);
+      toast("No changes to save");
+      return;
+    }
+
+    const changedFields: { label: string; before: string; after: string }[] = [];
+    formFieldsForCompare.forEach((key) => {
+      if (!canEditField(key as keyof typeof initialForm)) return;
+      const k = key as string;
+      const beforeVal = comparableValue(k, initialFormData[key]);
+      const afterVal = comparableValue(k, form[key]);
+      if (beforeVal !== afterVal) {
+        changedFields.push({
+          label: fieldLabels[key],
+          before: beforeVal || "—",
+          after: afterVal || "—",
+        });
+      }
+    });
+
     try {
       setIsSubmitting(true);
       setSubmitError(null);
@@ -100,10 +221,23 @@ export default function VerifyCustomerPage() {
         throw new Error(`API Error ${response.status}: ${errorText || response.statusText}`);
       }
 
-      // Show success modal
+      const updated = await response.json();
+      setApplicationFromDb(updated);
+      const merged = {
+        ...form,
+        status: updated.status ?? form.status,
+        orNumber: updated.orNumber ?? form.orNumber,
+        dateIssued: updated.dateIssued ?? form.dateIssued,
+        notes: updated.notes ?? form.notes,
+      };
+      setForm(merged);
+      setInitialFormData(merged);
+
       setShowSubmitConfirm(false);
       setShowConfirmation(true);
+      setLastChangeSummary(changedFields);
       setIsEditing(false);
+      persistNotification("Application submitted successfully", "INFO");
       toast.success("Application submitted successfully!");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -141,26 +275,28 @@ export default function VerifyCustomerPage() {
 
   useEffect(() => {
     if (!accountParam) return;
-    
+
     const loadAndCreateApplication = async () => {
       setLoading(true);
       setLoadError(null);
-      
+
       try {
         // hit same‑origin path; proxy rewrites /api/v1 in dev
         const res = await fetch(`/api/v1/accounts/${encodeURIComponent(accountParam)}`);
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         
-        // Map and normalize form data
+        // Map and normalize form data from external API (default for new/rejected)
         const mappedData = mapApiToForm(data);
         const normalizedData = normalizeFormData(mappedData);
+        const defaultData = { ...normalizedData, accountNumber: accountParam } as typeof initialForm;
+        setDefaultFormFromApi(defaultData);
         setForm((prev) => ({ ...prev, ...normalizedData, accountNumber: accountParam }));
-        
-        // Ensure application record exists in local database
-        // Try to create it (upsert-like behavior)
+        setInitialFormData((prev) => ({ ...prev, ...normalizedData, accountNumber: accountParam }));
+
+        // Ensure application record exists; new applications get PENDING. Then load from sanitation_db by status.
         try {
-          await fetch("/api/applications", {
+          const postRes = await fetch("/api/applications", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -169,8 +305,22 @@ export default function VerifyCustomerPage() {
               ...mappedData,
             }),
           });
+          if (postRes.ok) {
+            const app = await postRes.json();
+            setApplicationFromDb(app);
+            const status = (app.status ?? "").toString().toUpperCase();
+
+            if (status === "DECLINED" || status === "REJECTED") {
+              setForm({ ...defaultData, status: "DECLINED" });
+              setInitialFormData({ ...defaultData, status: "DECLINED" });
+            } else {
+              const fromDb = { ...app, accountNumber: accountParam } as Partial<typeof initialForm>;
+              setForm((prev) => ({ ...prev, ...fromDb }));
+              setInitialFormData((prev) => ({ ...prev, ...fromDb }));
+            }
+          }
         } catch {
-          // Record may already exist, which is fine - continue
+          // Record may already exist or create failed; form already set from external API
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load account";
@@ -184,118 +334,145 @@ export default function VerifyCustomerPage() {
     loadAndCreateApplication();
   }, [accountParam]);
 
+  // Note: notifications are shown on landing page only.
+
   const inputClass = (readOnly: boolean) =>
     readOnly
-      ? "w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3.5 text-base text-slate-800 cursor-default read-only:outline-none"
-      : "w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3.5 text-base text-slate-800 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300";
+      ? "w-full rounded-xl border border-neutral-200/80 bg-white px-3.5 py-3 text-sm text-neutral-900 cursor-default read-only:outline-none"
+      : "w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300";
 
-  const userInitials =
-    form.firstName.charAt(0) + (form.middleName ? form.middleName.charAt(0) : form.lastName.charAt(0));
+  const hasBlockingModal = showSubmitConfirm || showConfirmation || showDiscardConfirm;
 
-  const displayName =
-    form.firstName + (form.middleName ? " " + form.middleName.charAt(0) + "." : "");
   return (
-    <div className="flex min-h-screen min-h-[100dvh] flex-col bg-slate-100">
-      {/* Header - dark bar */}
-      <header className="flex min-h-[64px] items-center justify-between border-b-4 border-slate-300 bg-slate-800 px-4 py-4 sm:px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          <Image
-            src="/logo_aneco.png"
-            alt="ANECO"
-            width={56}
-            height={56}
-            className="shrink-0 object-contain"
-          />
-          <h1 className="shrink-0 truncate text-lg font-bold text-white sm:text-xl">
-            Membership Application
-          </h1>
-        </div>
-        <div className="relative w-12 shrink-0">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((o) => !o)}
-            className="flex h-12 w-12 flex-col items-center justify-center rounded-lg bg-slate-700 p-2 text-white transition-colors hover:bg-slate-600"
-            aria-label="Menu"
-            aria-expanded={menuOpen}
-          >
-            <span className="block h-1 w-6 rounded-full bg-current" />
-            <span className="mt-1 block h-1 w-6 rounded-full bg-current" />
-            <span className="mt-1 block h-1 w-6 rounded-full bg-current" />
-          </button>
-          {/* Dropdown menu */}
-          {menuOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                aria-hidden
-                onClick={() => setMenuOpen(false)}
+    <div className={`relative flex min-h-screen min-h-[100dvh] flex-col bg-[#f5f4f0] ${hasBlockingModal ? "overflow-hidden" : ""}`}>
+      <style>{`
+        @keyframes app-card-fade-up {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .app-details-card {
+          animation: app-card-fade-up 0.35s ease-out;
+        }
+        @keyframes app-footer-slide-up {
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .app-footer-bar {
+          animation: app-footer-slide-up 0.25s ease-out;
+        }
+        @keyframes app-edit-section-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .app-edit-section {
+          animation: app-edit-section-in 0.25s ease-out;
+        }
+        @keyframes app-modal-pop {
+          from { opacity: 0; transform: translateY(4px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .app-modal-card {
+          animation: app-modal-pop 0.25s ease-out;
+        }
+      `}</style>
+      {/* Header - modern top bar */}
+      <header className="sticky top-0 z-30 border-b border-neutral-200/80 bg-[#faf9f6]/80 backdrop-blur-md">
+        <div className="mx-auto flex min-h-[60px] w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center">
+              <Image
+                src="/logo_aneco.png"
+                alt="ANECO"
+                width={28}
+                height={28}
+                className="object-contain"
               />
-              <div className="absolute right-4 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border-2 border-slate-200 bg-white py-4 shadow-2xl sm:right-6">
-                <div className="flex flex-col items-center border-b border-slate-100 px-6 pb-6 pt-2">
-                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-blue-600 text-2xl font-bold text-white">
-                    {userInitials}
-                  </div>
-                  <p className="mt-4 text-center text-base font-bold text-slate-800">
-                    {displayName}
-                  </p>
-                  <p className="mt-1 text-center text-sm text-slate-600">{form.email}</p>
-                </div>
-                <nav className="py-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsEditing(true);
-                      setMenuOpen(false);
-                    }}
-                    className="flex w-full items-center gap-4 px-6 py-3.5 text-left text-base font-semibold text-slate-700 transition-colors hover:bg-blue-50"
-                  >
-                    <svg className="h-6 w-6 shrink-0 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                    Edit Information
-                  </button>
-                  <div className="flex w-full items-center gap-4 px-6 py-3.5 text-base text-slate-700">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                      <svg className="h-4 w-4 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </div>
+            <div className="min-w-0">
+              <h1
+                className="truncate text-xs font-semibold tracking-[0.18em] text-neutral-900 sm:text-sm"
+                style={{ letterSpacing: "-0.02em" }}
+              >
+                APPLICATION DETAILS
+              </h1>
+            </div>
+          </div>
+
+          <div className="hidden md:block" />
+
+          {/* Mobile menu */}
+          <div className="relative w-12 shrink-0 md:hidden">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((o) => !o)}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200/80 bg-white text-neutral-900 shadow-sm transition-colors hover:bg-neutral-50"
+              aria-label="Menu"
+              aria-expanded={menuOpen}
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+            </button>
+            {/* Dropdown menu */}
+            {menuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  aria-hidden
+                  onClick={() => setMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-neutral-200/80 bg-[#faf9f6] shadow-lg">
+                  <nav className="py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditing(true);
+                        setMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-medium text-neutral-900 transition-all hover:bg-white active:scale-[0.98]"
+                    >
+                      <svg className="h-5 w-5 shrink-0 text-neutral-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
-                    </span>
-                    <div>
-                      <p className="font-semibold text-slate-800">Status</p>
-                      <p className="text-sm text-slate-600">{form.status || "Pending"}</p>
-                    </div>
-                  </div>
-                  <Link
-                    href="/"
-                    onClick={() => setMenuOpen(false)}
-                    className="flex w-full items-center gap-4 px-6 py-3.5 text-left text-base font-semibold text-red-600 transition-colors hover:bg-red-50"
-                  >
-                    <svg className="h-6 w-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    Logout
-                  </Link>
-                </nav>
-              </div>
-            </>
-          )}
+                      Edit information
+                    </button>
+                    <Link
+                      href="/"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                    >
+                      <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      Logout
+                    </Link>
+                  </nav>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
-      {/* Main - white content area */}
-      <main className="flex flex-1 flex-col overflow-y-auto bg-slate-50">
-        <div className="relative mx-auto w-full max-w-2xl bg-white px-4 py-6 sm:px-6 sm:py-8">
+      {/* Main - centered minimal card */}
+      <main className="relative flex min-h-0 flex-1 w-full flex-col items-center overflow-y-auto p-4 pb-28 sm:p-6 sm:pb-32 lg:justify-center">
+        <div className="app-details-card relative w-full max-w-6xl rounded-2xl border border-neutral-200/80 bg-[#faf9f6] px-4 py-6 shadow-sm sm:px-6 sm:py-8">
           {/* Your Information (centered) */}
-          <div className="mb-8 text-center">
-            <h2 className="text-2xl font-bold text-slate-800 sm:text-3xl">Your Information</h2>
-            <p className="mt-2 text-sm text-slate-600">Review and update your application details</p>
+          <div className="mb-6 text-center sm:mb-8">
+            <h2 className="text-xl font-medium tracking-tight text-neutral-900 sm:text-2xl" style={{ letterSpacing: "-0.02em" }}>
+              Your information
+            </h2>
+            <p className="mt-2 text-xs text-neutral-500 sm:text-sm">
+              Carefully review your details before submitting. You can edit fields as needed.
+            </p>
           </div>
 
           {loading && (
-            <p className="text-center py-10">Loading application…</p>
+            <p className="py-10 text-center text-sm text-neutral-500">Loading application…</p>
           )}
           {loadError && (
-            <p className="text-center py-10 text-red-500">{loadError}</p>
+            <p className="py-10 text-center text-sm text-red-600">{loadError}</p>
           )}
+
           <form
             id="verify-form"
             className="space-y-5"
@@ -304,121 +481,71 @@ export default function VerifyCustomerPage() {
               setShowSubmitConfirm(true);
             }}
           >
-            {/* Account number - always read-only */}
+            {/* Summary – Account only; status is shown via notification */}
             <div>
-              <label className="mb-2 block text-base font-semibold text-slate-800">
-                Account Number
-              </label>
-              <p className="rounded-lg border-2 border-slate-200 bg-slate-50 px-4 py-3.5 text-base text-slate-800 font-bold">
-                {form.accountNumber || accountParam || "—"}
-              </p>
+              <div className="rounded-2xl border border-neutral-200/80 bg-white px-4 py-3 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Account</p>
+                <p className="mt-1 truncate text-sm font-semibold text-neutral-900">
+                  {form.accountNumber || accountParam || "—"}
+                </p>
+              </div>
             </div>
 
             {/* Application type */}
             <div>
-              <label className="mb-3 block text-base font-semibold text-slate-800">
+              <label className="mb-2 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">
                 Application Type
               </label>
-              {!isEditing ? (
-                <p className="rounded-lg border-2 border-slate-200 bg-slate-50 px-4 py-3.5 text-base text-slate-800">
-                  {form.appType === "new" || form.appType === "NEW" ? "As New Member" : form.appType === "change" || form.appType === "CHANGE" ? "As Change/New Occupant" : form.appType || "—"}
-                </p>
-              ) : (
-                <div className="space-y-3 pt-2">
-                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-4 transition-all hover:border-blue-400 hover:bg-blue-50">
-                    <input
-                      type="radio"
-                      name="appType"
-                      value="new"
-                      checked={form.appType?.toLowerCase?.() === "new"}
-                      onChange={() => setForm((p) => ({ ...p, appType: "new" }))}
-                      className="h-5 w-5 cursor-pointer"
-                    />
-                    <span className="text-base font-medium text-slate-800">As New Member</span>
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-4 transition-all hover:border-blue-400 hover:bg-blue-50">
-                    <input
-                      type="radio"
-                      name="appType"
-                      value="change"
-                      checked={form.appType?.toLowerCase?.() === "change"}
-                      onChange={() => setForm((p) => ({ ...p, appType: "change" }))}
-                      className="h-5 w-5 cursor-pointer"
-                    />
-                    <span className="text-base font-medium text-slate-800">As Change/New Occupant</span>
-                  </label>
-                </div>
-              )}
+              <p className="rounded-xl border border-neutral-200/80 bg-white px-3.5 py-3 text-sm text-neutral-900">
+                {form.appType === "new" || form.appType === "NEW"
+                  ? "As New Member"
+                  : form.appType === "change" || form.appType === "CHANGE"
+                    ? "As Change/New Occupant"
+                    : form.appType || "—"}
+              </p>
             </div>
 
             {/* Membership type */}
             <div>
-              <label className="mb-3 block text-base font-semibold text-slate-800">
+              <label className="mb-2 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">
                 Membership Type
               </label>
-              {!isEditing ? (
-                <p className="rounded-lg border-2 border-slate-200 bg-slate-50 px-4 py-3.5 text-base text-slate-800">
-                  {form.membership === "household" || form.membership === "HOUSEHOLD" ? "Household" : form.membership === "corporate" || form.membership === "CORPORATE" ? "Corporate/Sectoral/Business" : form.membership || "—"}
-                </p>
-              ) : (
-                <div className="space-y-3 pt-2">
-                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-4 transition-all hover:border-blue-400 hover:bg-blue-50">
-                    <input
-                      type="radio"
-                      name="membership"
-                      value="household"
-                      checked={form.membership?.toLowerCase?.() === "household"}
-                      onChange={() => setForm((p) => ({ ...p, membership: "household" }))}
-                      className="h-5 w-5 cursor-pointer"
-                    />
-                    <span className="text-base font-medium text-slate-800">Household</span>
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-4 transition-all hover:border-blue-400 hover:bg-blue-50">
-                    <input
-                      type="radio"
-                      name="membership"
-                      value="corporate"
-                      checked={form.membership?.toLowerCase?.() === "corporate"}
-                      onChange={() => setForm((p) => ({ ...p, membership: "corporate" }))}
-                      className="h-5 w-5 cursor-pointer"
-                    />
-                    <span className="text-base font-medium text-slate-800">Corporate/Sectoral/Business</span>
-                  </label>
-                </div>
-              )}
+              <p className="rounded-xl border border-neutral-200/80 bg-white px-3.5 py-3 text-sm text-neutral-900">
+                {form.membership === "household" || form.membership === "HOUSEHOLD" ? "Household" : form.membership === "corporate" || form.membership === "CORPORATE" ? "Corporate/Sectoral/Business" : form.membership || "—"}
+              </p>
             </div>
 
             {/* Record location */}
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <label className="mb-2 block text-base font-semibold text-slate-800">Area</label>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Area</label>
                 <input
                   type="text"
-                  value={form.area}
+                  value={form.area ?? ""}
                   onChange={update("area")}
-                  readOnly={!isEditing}
+                  readOnly={!isEditing || !canEditField("area")}
                   placeholder="e.g. Area 2-Nasipit"
                   className={inputClass(!isEditing)}
                 />
               </div>
               <div>
-                <label className="mb-2 block text-base font-semibold text-slate-800">District</label>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">District</label>
                 <input
                   type="text"
-                  value={form.district}
+                  value={form.district ?? ""}
                   onChange={update("district")}
-                  readOnly={!isEditing}
+                  readOnly={!isEditing || !canEditField("district")}
                   placeholder="e.g. Dist 7 - NASIPIT"
                   className={inputClass(!isEditing)}
                 />
               </div>
               <div>
-                <label className="mb-2 block text-base font-semibold text-slate-800">Barangay</label>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Barangay</label>
                 <input
                   type="text"
-                  value={form.barangay}
+                  value={form.barangay ?? ""}
                   onChange={update("barangay")}
-                  readOnly={!isEditing}
+                  readOnly={!isEditing || !canEditField("barangay")}
                   placeholder="e.g. KINABJANGAN"
                   className={inputClass(!isEditing)}
                 />
@@ -426,116 +553,118 @@ export default function VerifyCustomerPage() {
             </div>
 
             {/* Applicant details */}
-            <div className="border-t-2 border-slate-200 pt-6">
-              <h3 className="mb-5 text-base font-bold text-slate-800">Applicant Details</h3>
+            <div className="border-t border-neutral-200/80 pt-6">
+              <h3 className="mb-4 text-xs font-medium uppercase tracking-[0.12em] text-neutral-500">
+                Applicant details
+              </h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">First Name</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">First Name</label>
                   <input
                     type="text"
-                    value={form.firstName}
+                    value={form.firstName ?? ""}
                     onChange={update("firstName")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("firstName")}
                     placeholder="Enter first name"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Middle Name</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Middle Name</label>
                   <input
                     type="text"
-                    value={form.middleName}
+                    value={form.middleName ?? ""}
                     onChange={update("middleName")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("middleName")}
                     placeholder="Enter middle name"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Last Name</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Last Name</label>
                   <input
                     type="text"
-                    value={form.lastName}
+                    value={form.lastName ?? ""}
                     onChange={update("lastName")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("lastName")}
                     placeholder="Enter last name"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Suffix Name</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Suffix Name</label>
                   <input
                     type="text"
-                    value={form.suffixName}
+                    value={form.suffixName ?? ""}
                     onChange={update("suffixName")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("suffixName")}
                     placeholder="Optional"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Birthdate</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Birthdate</label>
                   <input
                     type="text"
-                    value={form.birthdate}
+                    value={form.birthdate ?? ""}
                     onChange={update("birthdate")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("birthdate")}
                     placeholder="MM/DD/YYYY"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-3 block text-base font-semibold text-slate-800">Gender</label>
+                  <label className="mb-2 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Gender</label>
                   {!isEditing ? (
-                    <p className="rounded-lg border-2 border-slate-200 bg-slate-50 px-4 py-3.5 text-base text-slate-800">
+                    <p className="rounded-xl border border-neutral-200/80 bg-white px-3.5 py-3 text-sm text-neutral-900">
                       {form.gender === "male" || form.gender === "MALE" ? "Male" : form.gender === "female" || form.gender === "FEMALE" ? "Female" : form.gender || "—"}
                     </p>
                   ) : (
-                    <div className="space-y-2 pt-1">
-                      <label className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-3 transition-all hover:border-blue-400 hover:bg-blue-50">
+                    <div className="app-edit-section space-y-2 pt-1">
+                      <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-neutral-200/80 bg-white px-3.5 py-3 text-sm font-medium text-neutral-900 transition-all hover:bg-neutral-50">
                         <input
                           type="radio"
                           name="gender"
                           value="male"
                           checked={form.gender?.toLowerCase?.() === "male"}
                           onChange={() => setForm((p) => ({ ...p, gender: "male" }))}
-                          className="h-5 w-5 cursor-pointer"
+                          className="h-4 w-4 cursor-pointer"
                         />
-                        <span className="text-base font-medium text-slate-800">Male</span>
+                        <span>Male</span>
                       </label>
-                      <label className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-3 transition-all hover:border-blue-400 hover:bg-blue-50">
+                      <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-neutral-200/80 bg-white px-3.5 py-3 text-sm font-medium text-neutral-900 transition-all hover:bg-neutral-50">
                         <input
                           type="radio"
                           name="gender"
                           value="female"
                           checked={form.gender?.toLowerCase?.() === "female"}
                           onChange={() => setForm((p) => ({ ...p, gender: "female" }))}
-                          className="h-5 w-5 cursor-pointer"
+                          className="h-4 w-4 cursor-pointer"
                         />
-                        <span className="text-base font-medium text-slate-800">Female</span>
+                        <span>Female</span>
                       </label>
                     </div>
                   )}
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="mb-3 block text-base font-semibold text-slate-800">Civil Status</label>
+                  <label className="mb-2 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Civil Status</label>
                   {!isEditing ? (
-                    <p className="rounded-lg border-2 border-slate-200 bg-slate-50 px-4 py-3.5 text-base text-slate-800">
+                    <p className="rounded-xl border border-neutral-200/80 bg-white px-3.5 py-3 text-sm text-neutral-900">
                       {form.civilStatus ? form.civilStatus.charAt(0).toUpperCase() + form.civilStatus.slice(1) : "—"}
                     </p>
                   ) : (
-                    <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-3">
+                    <div className="app-edit-section grid grid-cols-2 gap-2 pt-1 sm:grid-cols-3">
                       {["Single", "Married", "Widow/Widower", "Separated", "Annulled", "Others"].map((s) => (
-                        <label key={s} className="flex cursor-pointer items-center gap-2 rounded-lg border-2 border-slate-200 bg-white p-3 transition-all hover:border-blue-400 hover:bg-blue-50">
+                        <label key={s} className="flex cursor-pointer items-center gap-2 rounded-xl border border-neutral-200/80 bg-white px-3 py-2 text-xs font-medium text-neutral-900 transition-all hover:bg-neutral-50">
                           <input
                             type="radio"
                             name="civilStatus"
                             value={s.toLowerCase()}
                             checked={form.civilStatus?.toLowerCase?.() === s.toLowerCase()}
                             onChange={() => setForm((p) => ({ ...p, civilStatus: s.toLowerCase() }))}
-                            className="h-4 w-4 cursor-pointer"
+                            className="h-3.5 w-3.5 cursor-pointer"
                           />
-                          <span className="text-sm font-medium text-slate-800">{s}</span>
+                          <span>{s}</span>
                         </label>
                       ))}
                     </div>
@@ -545,60 +674,62 @@ export default function VerifyCustomerPage() {
             </div>
 
             {/* Spouse details */}
-            <div className="border-t-2 border-slate-200 pt-6">
-              <h3 className="mb-5 text-base font-bold text-slate-800">Spouse Details</h3>
+            <div className="border-t border-neutral-200/80 pt-6">
+              <h3 className="mb-4 text-xs font-medium uppercase tracking-[0.12em] text-neutral-500">
+                Spouse details
+              </h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">First Name</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">First Name</label>
                   <input
                     type="text"
-                    value={form.spouseFirst}
+                    value={form.spouseFirst ?? ""}
                     onChange={update("spouseFirst")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("spouseFirst")}
                     placeholder="Enter first name"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Middle Name</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Middle Name</label>
                   <input
                     type="text"
-                    value={form.spouseMiddle}
+                    value={form.spouseMiddle ?? ""}
                     onChange={update("spouseMiddle")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("spouseMiddle")}
                     placeholder="Enter middle name"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Last Name</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Last Name</label>
                   <input
                     type="text"
-                    value={form.spouseLast}
+                    value={form.spouseLast ?? ""}
                     onChange={update("spouseLast")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("spouseLast")}
                     placeholder="Enter last name"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Suffix Name</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Suffix Name</label>
                   <input
                     type="text"
-                    value={form.spouseSuffix}
+                    value={form.spouseSuffix ?? ""}
                     onChange={update("spouseSuffix")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("spouseSuffix")}
                     placeholder="Optional"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Birthdate</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Birthdate</label>
                   <input
                     type="text"
-                    value={form.spouseBirthdate}
+                    value={form.spouseBirthdate ?? ""}
                     onChange={update("spouseBirthdate")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("spouseBirthdate")}
                     placeholder="MM/DD/YYYY"
                     className={inputClass(!isEditing)}
                   />
@@ -608,50 +739,52 @@ export default function VerifyCustomerPage() {
 
             {/* Residence address */}
             <div>
-              <label className="mb-2 block text-base font-semibold text-slate-800">Residence Address</label>
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Residence Address</label>
               <input
                 type="text"
-                value={form.residenceAddress}
+                value={form.residenceAddress ?? ""}
                 onChange={update("residenceAddress")}
-                readOnly={!isEditing}
+                readOnly={!isEditing || !canEditField("residenceAddress")}
                 placeholder="House No., Street, Purok No., Barangay, City/Municipality"
                 className={inputClass(!isEditing)}
               />
             </div>
 
             {/* Contact information */}
-            <div className="border-t-2 border-slate-200 pt-6">
-              <h3 className="mb-5 text-base font-bold text-slate-800">Contact Information</h3>
+            <div className="border-t border-neutral-200/80 pt-6">
+              <h3 className="mb-4 text-xs font-medium uppercase tracking-[0.12em] text-neutral-500">
+                Contact information
+              </h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Cellphone No.</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Cellphone No.</label>
                   <input
                     type="tel"
-                    value={form.cellphone}
+                    value={form.cellphone ?? ""}
                     onChange={update("cellphone")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("cellphone")}
                     placeholder="Enter cellphone number"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Landline No.</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Landline No.</label>
                   <input
                     type="tel"
-                    value={form.landline}
+                    value={form.landline ?? ""}
                     onChange={update("landline")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("landline")}
                     placeholder="Enter landline number"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="mb-2 block text-base font-semibold text-slate-800">E-mail Address</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">E-mail Address</label>
                   <input
                     type="email"
-                    value={form.email}
+                    value={form.email ?? ""}
                     onChange={update("email")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("email")}
                     placeholder="Enter email address"
                     className={inputClass(!isEditing)}
                   />
@@ -662,23 +795,23 @@ export default function VerifyCustomerPage() {
             {/* Co-signatory & Witness */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-2 block text-base font-semibold text-slate-800">Co-signatory (Full Name)</label>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Co-signatory (Full Name)</label>
                 <input
                   type="text"
-                  value={form.cosignatory}
+                  value={form.cosignatory ?? ""}
                   onChange={update("cosignatory")}
-                  readOnly={!isEditing}
+                  readOnly={!isEditing || !canEditField("cosignatory")}
                   placeholder="Enter full name"
                   className={inputClass(!isEditing)}
                 />
               </div>
               <div>
-                <label className="mb-2 block text-base font-semibold text-slate-800">Witness</label>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Witness</label>
                 <input
                   type="text"
-                  value={form.witness}
+                  value={form.witness ?? ""}
                   onChange={update("witness")}
-                  readOnly={!isEditing}
+                  readOnly={!isEditing || !canEditField("witness")}
                   placeholder="Enter witness name"
                   className={inputClass(!isEditing)}
                 />
@@ -686,50 +819,52 @@ export default function VerifyCustomerPage() {
             </div>
 
             {/* Contract status */}
-            <div className="border-t-2 border-slate-200 pt-6">
-              <h3 className="mb-5 text-base font-bold text-slate-800">Contract Status</h3>
+            <div className="border-t border-neutral-200/80 pt-6">
+              <h3 className="mb-4 text-xs font-medium uppercase tracking-[0.12em] text-neutral-500">
+                Contract status
+              </h3>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Status</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Status</label>
                   <input
                     type="text"
-                    value={form.status}
+                    value={form.status ?? ""}
                     onChange={update("status")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("status")}
                     placeholder="e.g. Signed up"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">OR Number</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">OR Number</label>
                   <input
                     type="text"
-                    value={form.orNumber}
+                    value={form.orNumber ?? ""}
                     onChange={update("orNumber")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("orNumber")}
                     placeholder="Enter OR number"
                     className={inputClass(!isEditing)}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-base font-semibold text-slate-800">Date Issued</label>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Date Issued</label>
                   <input
                     type="text"
-                    value={form.dateIssued}
+                    value={form.dateIssued ?? ""}
                     onChange={update("dateIssued")}
-                    readOnly={!isEditing}
+                    readOnly={!isEditing || !canEditField("dateIssued")}
                     placeholder="MM/DD/YYYY"
                     className={inputClass(!isEditing)}
                   />
                 </div>
               </div>
               <div className="mt-6">
-                <label className="mb-2 block text-base font-semibold text-slate-800">Notes</label>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Notes</label>
                 <textarea
                   rows={3}
-                  value={form.notes}
+                  value={form.notes ?? ""}
                   onChange={update("notes")}
-                  readOnly={!isEditing}
+                  readOnly={!isEditing || !canEditField("notes")}
                   placeholder="Enter notes"
                   className={inputClass(!isEditing)}
                 />
@@ -739,21 +874,21 @@ export default function VerifyCustomerPage() {
         </div>
       </main>
 
-      {/* Footer - Verify & Cancel only when editing */}
+      {/* Footer - actions only when editing (sticky bottom bar) */}
       {isEditing && (
-        <footer className="flex flex-shrink-0 gap-4 border-t-2 border-slate-200 bg-white px-4 py-6 sm:px-6">
-          <div className="mx-auto flex w-full max-w-2xl gap-4">
+        <footer className="app-footer-bar fixed inset-x-0 bottom-0 z-30 border-t border-neutral-200/80 bg-[#faf9f6]/95 backdrop-blur-md">
+          <div className="mx-auto flex w-full max-w-6xl gap-3 px-4 py-3 sm:gap-4 sm:px-6">
             <button
               type="submit"
               form="verify-form"
-              className="flex-1 rounded-xl bg-blue-600 py-4 text-lg font-bold text-white transition-colors hover:bg-blue-700 active:scale-[0.98]"
+              className="flex-1 rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-neutral-800 active:scale-[0.97] sm:py-3.5"
             >
-              Done
+              Save changes
             </button>
             <button
               type="button"
-              onClick={() => setIsEditing(false)}
-              className="flex-1 rounded-xl border-2 border-slate-300 bg-slate-100 py-4 text-lg font-bold text-slate-700 transition-colors hover:bg-slate-200 active:scale-[0.98]"
+              onClick={() => setShowDiscardConfirm(true)}
+              className="flex-1 rounded-xl border border-neutral-200/80 bg-white py-3 text-sm font-medium text-neutral-900 shadow-sm transition-all hover:bg-neutral-50 active:scale-[0.97] sm:py-3.5"
             >
               Cancel
             </button>
@@ -761,18 +896,53 @@ export default function VerifyCustomerPage() {
         </footer>
       )}
 
+      {/* Discard confirmation when cancelling edits */}
+      {showDiscardConfirm && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
+          <div className="app-modal-card w-full max-w-sm rounded-2xl border border-neutral-200/80 bg-[#faf9f6] p-6 shadow-xl sm:p-8">
+            <p className="text-center text-sm font-medium text-neutral-900 sm:text-base">
+              Discard your changes?
+            </p>
+            <p className="mt-2 text-center text-xs text-neutral-500 sm:text-sm">
+              Any edits you made will be lost if you cancel.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => setShowDiscardConfirm(false)}
+                className="w-full rounded-xl border border-neutral-200/80 bg-white py-3 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-50"
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm(initialFormData);
+                  setIsEditing(false);
+                  setShowDiscardConfirm(false);
+                  router.push(`/verify-customer/landing?account=${encodeURIComponent(accountParam || "")}&verified=1`);
+                }}
+                className="w-full rounded-xl bg-red-600 py-3 text-sm font-medium text-white transition-colors hover:bg-red-700"
+              >
+                Discard changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* "Do you want to proceed?" confirmation */}
       {showSubmitConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl border-2 border-slate-200 bg-white p-6 shadow-xl sm:p-8">
-            <p className="text-center text-lg font-semibold text-slate-800">
+          <div className="app-modal-card w-full max-w-sm rounded-2xl border border-neutral-200/80 bg-[#faf9f6] p-6 shadow-xl sm:p-8">
+            <p className="text-center text-sm font-medium text-neutral-900 sm:text-base">
               Do you want to proceed with submitting your information?
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
                 onClick={() => setShowSubmitConfirm(false)}
-                className="w-full rounded-xl border-2 border-slate-300 bg-white py-3.5 text-base font-bold text-slate-700 transition-colors hover:bg-slate-50"
+                className="w-full rounded-xl border border-neutral-200/80 bg-white py-3 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-50"
               >
                 Cancel
               </button>
@@ -780,28 +950,28 @@ export default function VerifyCustomerPage() {
                 type="button"
                 onClick={handleSubmitApplication}
                 disabled={isSubmitting}
-                className="w-full rounded-xl bg-blue-600 py-3.5 text-base font-bold text-white transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSubmitting ? "Submitting..." : "Proceed"}
               </button>
             </div>
             {submitError && (
-              <div className="mt-4 rounded-lg border-2 border-red-200 bg-red-50 p-3">
-                <p className="text-base text-red-700 font-medium">{submitError}</p>
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+                <p className="text-sm font-medium text-red-700">{submitError}</p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Submission confirmation modal */}
+      {/* Submission confirmation / summary modal */}
       {showConfirmation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl border-2 border-slate-200 bg-white p-6 shadow-xl sm:p-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="app-modal-card w-full max-w-sm rounded-2xl border border-neutral-200/80 bg-[#faf9f6] p-6 shadow-xl sm:p-8">
             <div className="flex flex-col items-center text-center">
-              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
                 <svg
-                  className="h-8 w-8 text-emerald-600"
+                  className="h-6 w-6 text-emerald-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -814,17 +984,53 @@ export default function VerifyCustomerPage() {
                   />
                 </svg>
               </div>
-              <h3 className="text-xl font-bold text-slate-800">Submission Confirmed</h3>
-              <p className="mt-4 text-base leading-relaxed text-slate-600">
-                Please wait for a call to verify your information. Your application is pending approval.
+              <h3 className="text-base font-medium text-neutral-900">Review your changes</h3>
+              <p className="mt-3 text-sm leading-relaxed text-neutral-600">
+                Your updates have been submitted. Please review the summary below.
               </p>
-              <button
-                type="button"
-                onClick={() => setShowConfirmation(false)}
-                className="mt-8 w-full rounded-xl bg-blue-600 py-4 text-lg font-bold text-white transition-colors hover:bg-blue-700"
-              >
-                OK
-              </button>
+              {lastChangeSummary.length > 0 ? (
+                <div className="mt-4 w-full space-y-2 text-left text-sm text-neutral-700">
+                  {lastChangeSummary.map((item) => (
+                    <div key={item.label} className="rounded-xl border border-neutral-200/80 bg-white px-3.5 py-2.5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-neutral-500">{item.label}</p>
+                      <div className="mt-1 flex flex-col gap-1 text-xs sm:flex-row sm:gap-4">
+                        <div className="sm:w-1/2">
+                          <p className="text-[11px] font-medium text-neutral-500">Before</p>
+                          <p className="truncate text-neutral-800">{item.before}</p>
+                        </div>
+                        <div className="sm:w-1/2">
+                          <p className="text-[11px] font-medium text-neutral-500">After</p>
+                          <p className="truncate text-neutral-800">{item.after}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-neutral-500">No visible field changes were detected.</p>
+              )}
+              <div className="mt-6 flex w-full flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowConfirmation(false);
+                    setIsEditing(true);
+                  }}
+                  className="w-full rounded-xl border border-neutral-200/80 bg-white py-3 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-50"
+                >
+                  Add more changes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowConfirmation(false);
+                    router.push(`/verify-customer/landing?account=${encodeURIComponent(accountParam || "")}&verified=1`);
+                  }}
+                  className="w-full rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+                >
+                  Done reviewing
+                </button>
+              </div>
             </div>
           </div>
         </div>

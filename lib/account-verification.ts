@@ -164,13 +164,13 @@ export function mapFormToApi(
   if (civilStatus) payload.civil_status = civilStatus;
   const cellphone = nonEmptyString(formData.cellphone);
   if (cellphone) payload.cellphone = cellphone;
+  const birthdate = nonEmptyString(formData.birthdate);
+  if (birthdate) payload.birthdate = birthdate;
 
   const middleName = nullableString(formData.middleName);
   if (middleName !== undefined) payload.middle_name = middleName;
   const suffixName = nullableString(formData.suffixName);
   if (suffixName !== undefined) payload.suffix_name = suffixName;
-  const birthdate = nullableString(formData.birthdate);
-  if (birthdate !== undefined) payload.birthdate = birthdate;
   const spouseFirst = nullableString(formData.spouseFirst);
   if (spouseFirst !== undefined) payload.spouse_first = spouseFirst;
   const spouseMiddle = nullableString(formData.spouseMiddle);

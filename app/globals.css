@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  --background: #f5f4f0;
   --foreground: #171717;
 }
 
@@ -12,17 +12,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Light mode only – no dark mode */
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Lightning video – subtle so it doesn’t overpower the card */
@@ -30,31 +25,36 @@ body {
   mix-blend-mode: screen;
 }
 
-/* Login card – frosted glass to fit lightning background */
+/* Login card – minimal card (home page) */
 .login-card {
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #faf9f6;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.2s ease;
 }
 
 .login-card-left {
-  background: rgba(245, 158, 11, 0.25);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #fdf0e3;
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .login-card-right {
-  background: rgba(15, 23, 42, 0.5);
+  background: #faf9f6;
 }
 
-/* Responsive: keep card within viewport on small screens */
+/* Responsive: keep card within viewport */
+@media (max-width: 480px) {
+  .login-card {
+    border-radius: 1.25rem;
+  }
+}
 @media (max-height: 600px) {
   .login-card {
     max-height: 95vh;
     overflow-y: auto;
   }
   .login-card-left {
-    min-height: 120px;
+    min-height: 100px;
   }
 }
 

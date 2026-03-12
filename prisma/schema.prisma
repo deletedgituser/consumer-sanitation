@@ -46,7 +46,7 @@ enum UserRole {
 
 model Application {
   id             String            @id @default(cuid())
-  accountNumber String   @unique
+  accountNumber  String?           @unique
   recordNumber   String            @unique
   appType        ApplicationType
   membership     MembershipType
@@ -112,8 +112,9 @@ model Application {
   createdBy   User?   @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy   User?   @relation("UpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   
-  documents    Document[]
-  activityLogs ActivityLog[]
+  documents     Document[]
+  activityLogs  ActivityLog[]
+  notifications Notification[]
 
   @@index([recordNumber])
   @@index([status])
@@ -211,6 +212,31 @@ model ActivityLog {
   @@index([applicationId])
   @@index([action])
   @@index([createdAt])
+}
+
+// ============================================================================
+// NOTIFICATIONS (customer-facing, tracked per application)
+// ============================================================================
+
+model Notification {
+  id             String           @id @default(cuid())
+  applicationId  String
+  application    Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  message        String           @db.VarChar(500)
+  type           NotificationType @default(INFO)
+  read           Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+
+  @@index([applicationId])
+  @@index([createdAt])
+  @@index([read])
+}
+
+enum NotificationType {
+  PENDING   // Application pending
+  APPROVED  // Application approved
+  DECLINED  // Application declined
+  INFO      // Generic (e.g. application submitted)
 }
 
 enum LogAction {
