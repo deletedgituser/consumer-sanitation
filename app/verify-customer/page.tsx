@@ -59,6 +59,55 @@ function normalizeFormData(data: Record<string, unknown>): Record<string, unknow
   return normalized;
 }
 
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function isoToMonDdYyyy(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  const [, yyyy, mm, dd] = m;
+  const monthIdx = Number(mm) - 1;
+  const mon = MONTHS_SHORT[monthIdx] ?? "";
+  if (!mon) return "";
+  return `${mon}-${dd}-${yyyy}`;
+}
+
+function monDdYyyyToIso(mon: string): string {
+  const m = mon.match(/^([A-Za-z]{3})-(\d{2})-(\d{4})$/);
+  if (!m) return "";
+  const [, monStrRaw, dd, yyyy] = m;
+  const monStr = monStrRaw.slice(0, 1).toUpperCase() + monStrRaw.slice(1).toLowerCase();
+  const monthIdx = MONTHS_SHORT.indexOf(monStr);
+  if (monthIdx < 0) return "";
+  const mm = String(monthIdx + 1).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function normalizeDateToMonDdYyyy(value: unknown): string {
+  const str = String(value ?? "").trim();
+  if (!str) return "";
+  // Already Mon-DD-YYYY
+  if (/^[A-Za-z]{3}-\d{2}-\d{4}$/.test(str)) {
+    const normalized = str.slice(0, 1).toUpperCase() + str.slice(1, 3).toLowerCase() + str.slice(3);
+    return monDdYyyyToIso(normalized) ? normalized : str;
+  }
+  // YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return isoToMonDdYyyy(str) || str;
+  // MM/DD/YYYY
+  const slashed = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (slashed) return isoToMonDdYyyy(`${slashed[3]}-${slashed[1]}-${slashed[2]}`) || str;
+  // MM-DD-YYYY
+  const dashed = str.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dashed) return isoToMonDdYyyy(`${dashed[3]}-${dashed[1]}-${dashed[2]}`) || str;
+  return str;
+}
+
+function normalizeDateFields(data: Record<string, any>) {
+  const next: Record<string, any> = { ...data };
+  if ("birthdate" in next) next.birthdate = normalizeDateToMonDdYyyy(next.birthdate);
+  if ("spouseBirthdate" in next) next.spouseBirthdate = normalizeDateToMonDdYyyy(next.spouseBirthdate);
+  return next;
+}
+
 export default function VerifyCustomerPage() {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
@@ -76,8 +125,11 @@ export default function VerifyCustomerPage() {
   const [applicationFromDb, setApplicationFromDb] = useState<Record<string, unknown> | null>(null);
   const [defaultFormFromApi, setDefaultFormFromApi] = useState<typeof initialForm>(initialForm);
   const fetchIdRef = useRef(0);
+  const birthdatePickerRef = useRef<HTMLInputElement>(null);
+  const spouseBirthdatePickerRef = useRef<HTMLInputElement>(null);
   const search = useSearchParams();
   const accountParam = search.get("account");
+  const reasonParam = (search.get("reason") ?? "").toString();
   const accountForApi = accountParam || form.accountNumber;
   const modeParam = (search.get("mode") ?? "").toLowerCase();
   const scopeParam = (search.get("scope") ?? "").toLowerCase();
@@ -91,6 +143,24 @@ export default function VerifyCustomerPage() {
     return new Set(parts);
   }, [fieldsParam]);
 
+  const updateReasonLabel = useMemo(() => {
+    if (reasonParam === "simple_correction") return "Correct my information (same owner)";
+    if (reasonParam === "change_owner_purchase") return "Change owner – I bought this house / moved in";
+    if (reasonParam === "change_owner_inheritance") return "Change owner – inheritance / legal transfer";
+    return "";
+  }, [reasonParam]);
+
+  const withUpdateReasonInNotes = useCallback(
+    (notes: unknown) => {
+      const base = typeof notes === "string" ? notes : "";
+      if (!updateReasonLabel) return base;
+      if (/^\\s*Update type\\s*:/im.test(base)) return base;
+      const suffix = `Update type: ${updateReasonLabel}`;
+      return base.trim() ? `${base.trim()}\n${suffix}` : suffix;
+    },
+    [updateReasonLabel]
+  );
+
   useEffect(() => {
     // If user came from the selection page with mode=edit, start in edit mode.
     if (allowEditingFromFlow) setIsEditing(true);
@@ -98,9 +168,24 @@ export default function VerifyCustomerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowEditingFromFlow, modeParam]);
 
+  const digitsOnly = (value: string) => value.replace(/\D+/g, "");
+  const formatMonDdYyyyFromInput = (value: string) => {
+    const trimmed = value.trim();
+    // If user pastes ISO, normalize to Mon-DD-YYYY
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return isoToMonDdYyyy(trimmed) || trimmed;
+    // If user pastes MM/DD/YYYY or MM-DD-YYYY, normalize
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) return normalizeDateToMonDdYyyy(trimmed);
+    if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) return normalizeDateToMonDdYyyy(trimmed);
+    // Otherwise keep as typed (we validate on submit if changed)
+    return trimmed;
+  };
+
   const canEditField = (field: keyof typeof initialForm) => {
     if (!allowEditingFromFlow) return false;
-    if (field === "membership") return false; // locked always
+    // Fields that are never editable in the customer flow
+    if (field === "membership" || field === "area" || field === "status" || field === "orNumber" || field === "dateIssued") {
+      return false;
+    }
     if (scopeParam === "custom") return customFieldsSet.has(field as string);
     if (effectiveScope === "all") return true;
     if (effectiveScope === "name") return ["firstName", "middleName", "lastName", "suffixName"].includes(field as string);
@@ -180,6 +265,20 @@ export default function VerifyCustomerPage() {
       return;
     }
 
+    const didChange = (key: keyof typeof initialForm) => {
+      const k = key as unknown as string;
+      return comparableValue(k, form[key]) !== comparableValue(k, initialFormData[key]);
+    };
+
+    // Lightweight client validation for edited fields
+    const email = String(form.email ?? "").trim();
+    if (canEditField("email") && didChange("email") && email && !email.includes("@")) {
+      setShowSubmitConfirm(false);
+      toast.error("Please enter a valid email address (must include @).");
+      return;
+    }
+    // Birthdates are calendar-only (no manual format validation needed)
+
     const changedFields: { label: string; before: string; after: string }[] = [];
     formFieldsForCompare.forEach((key) => {
       if (!canEditField(key as keyof typeof initialForm)) return;
@@ -212,7 +311,7 @@ export default function VerifyCustomerPage() {
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "edit", ...apiPayload }),
+          body: JSON.stringify({ action: "edit", source: "customer", ...apiPayload }),
         },
       );
 
@@ -237,7 +336,23 @@ export default function VerifyCustomerPage() {
       setShowConfirmation(true);
       setLastChangeSummary(changedFields);
       setIsEditing(false);
-      persistNotification("Application submitted successfully", "INFO");
+
+      const originalName = [
+        initialFormData.firstName,
+        initialFormData.middleName,
+        initialFormData.lastName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+      const wantsText = updateReasonLabel
+        ? `Wants to ${updateReasonLabel}`
+        : "Application submitted";
+
+      const notifMessage = `${originalName || "Customer"}\n${wantsText}`;
+
+      persistNotification(notifMessage, "INFO");
       toast.success("Application submitted successfully!");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -251,6 +366,43 @@ export default function VerifyCustomerPage() {
 
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const stripSymbolsExceptHyphen = (value: string) =>
+    value.replace(/[^a-zA-Z0-9\\s-]+/g, "");
+
+  const updateNoSymbols =
+    (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((prev) => ({ ...prev, [key]: stripSymbolsExceptHyphen(e.target.value) }));
+
+  const updateDigits =
+    (key: keyof typeof form, maxLen?: number) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((prev) => {
+        const next = digitsOnly(e.target.value);
+        return { ...prev, [key]: typeof maxLen === "number" ? next.slice(0, maxLen) : next };
+      });
+
+  const updateDateIso = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((prev) => ({ ...prev, [key]: formatMonDdYyyyFromInput(e.target.value) }));
+
+  const updateEmail = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((prev) => ({ ...prev, [key]: e.target.value.replace(/\s+/g, "") }));
+
+  const toIsoForDateInput = (value: string) => {
+    const str = String(value ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    if (/^[A-Za-z]{3}-\d{2}-\d{4}$/.test(str)) return monDdYyyyToIso(str) || "";
+    // Try best-effort normalize for legacy formats
+    const normalized = normalizeDateToMonDdYyyy(str);
+    return /^[A-Za-z]{3}-\d{2}-\d{4}$/.test(normalized) ? (monDdYyyyToIso(normalized) || "") : "";
+  };
+  const openDatePicker = (ref: React.RefObject<HTMLInputElement | null>) => {
+    const el = ref.current;
+    if (!el) return;
+    // Chromium supports showPicker(); fallback to click/focus.
+    (el as any).showPicker?.();
+    el.focus();
+    el.click();
+  };
 
   // if user navigated here without an account, show simple message
   if (!accountParam) {
@@ -288,7 +440,7 @@ export default function VerifyCustomerPage() {
         
         // Map and normalize form data from external API (default for new/rejected)
         const mappedData = mapApiToForm(data);
-        const normalizedData = normalizeFormData(mappedData);
+        const normalizedData = normalizeDateFields(normalizeFormData(mappedData));
         const defaultData = { ...normalizedData, accountNumber: accountParam } as typeof initialForm;
         setDefaultFormFromApi(defaultData);
         setForm((prev) => ({ ...prev, ...normalizedData, accountNumber: accountParam }));
@@ -303,6 +455,7 @@ export default function VerifyCustomerPage() {
               accountNumber: accountParam,
               recordNumber: data.record_number || `REC-${Date.now()}`,
               ...mappedData,
+              notes: withUpdateReasonInNotes((mappedData as any)?.notes),
             }),
           });
           if (postRes.ok) {
@@ -314,7 +467,7 @@ export default function VerifyCustomerPage() {
               setForm({ ...defaultData, status: "DECLINED" });
               setInitialFormData({ ...defaultData, status: "DECLINED" });
             } else {
-              const fromDb = { ...app, accountNumber: accountParam } as Partial<typeof initialForm>;
+              const fromDb = normalizeDateFields({ ...app, accountNumber: accountParam } as Partial<typeof initialForm>);
               setForm((prev) => ({ ...prev, ...fromDb }));
               setInitialFormData((prev) => ({ ...prev, ...fromDb }));
             }
@@ -563,7 +716,7 @@ export default function VerifyCustomerPage() {
                   <input
                     type="text"
                     value={form.firstName ?? ""}
-                    onChange={update("firstName")}
+                    onChange={updateNoSymbols("firstName")}
                     readOnly={!isEditing || !canEditField("firstName")}
                     placeholder="Enter first name"
                     className={inputClass(!isEditing)}
@@ -574,7 +727,7 @@ export default function VerifyCustomerPage() {
                   <input
                     type="text"
                     value={form.middleName ?? ""}
-                    onChange={update("middleName")}
+                    onChange={updateNoSymbols("middleName")}
                     readOnly={!isEditing || !canEditField("middleName")}
                     placeholder="Enter middle name"
                     className={inputClass(!isEditing)}
@@ -585,7 +738,7 @@ export default function VerifyCustomerPage() {
                   <input
                     type="text"
                     value={form.lastName ?? ""}
-                    onChange={update("lastName")}
+                    onChange={updateNoSymbols("lastName")}
                     readOnly={!isEditing || !canEditField("lastName")}
                     placeholder="Enter last name"
                     className={inputClass(!isEditing)}
@@ -596,7 +749,7 @@ export default function VerifyCustomerPage() {
                   <input
                     type="text"
                     value={form.suffixName ?? ""}
-                    onChange={update("suffixName")}
+                    onChange={updateNoSymbols("suffixName")}
                     readOnly={!isEditing || !canEditField("suffixName")}
                     placeholder="Optional"
                     className={inputClass(!isEditing)}
@@ -604,14 +757,39 @@ export default function VerifyCustomerPage() {
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Birthdate</label>
-                  <input
-                    type="text"
-                    value={form.birthdate ?? ""}
-                    onChange={update("birthdate")}
-                    readOnly={!isEditing || !canEditField("birthdate")}
-                    placeholder="MM/DD/YYYY"
-                    className={inputClass(!isEditing)}
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={form.birthdate ?? ""}
+                      onChange={updateDateIso("birthdate")}
+                      readOnly
+                      placeholder="Jul-24-1999"
+                      inputMode="numeric"
+                      pattern="[A-Za-z]{3}-\\d{2}-\\d{4}"
+                      className={inputClass(true)}
+                    />
+                    {isEditing && canEditField("birthdate") && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openDatePicker(birthdatePickerRef)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-neutral-200/80 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
+                          aria-label="Open calendar"
+                        >
+                          Calendar
+                        </button>
+                        <input
+                          ref={birthdatePickerRef}
+                          type="date"
+                          value={toIsoForDateInput(String(form.birthdate ?? ""))}
+                          onChange={(e) => setForm((p) => ({ ...p, birthdate: isoToMonDdYyyy(e.target.value) || p.birthdate }))}
+                          className="absolute -z-10 h-0 w-0 opacity-0"
+                          tabIndex={-1}
+                          aria-hidden="true"
+                        />
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="mb-2 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Gender</label>
@@ -684,7 +862,7 @@ export default function VerifyCustomerPage() {
                   <input
                     type="text"
                     value={form.spouseFirst ?? ""}
-                    onChange={update("spouseFirst")}
+                    onChange={updateNoSymbols("spouseFirst")}
                     readOnly={!isEditing || !canEditField("spouseFirst")}
                     placeholder="Enter first name"
                     className={inputClass(!isEditing)}
@@ -695,7 +873,7 @@ export default function VerifyCustomerPage() {
                   <input
                     type="text"
                     value={form.spouseMiddle ?? ""}
-                    onChange={update("spouseMiddle")}
+                    onChange={updateNoSymbols("spouseMiddle")}
                     readOnly={!isEditing || !canEditField("spouseMiddle")}
                     placeholder="Enter middle name"
                     className={inputClass(!isEditing)}
@@ -706,7 +884,7 @@ export default function VerifyCustomerPage() {
                   <input
                     type="text"
                     value={form.spouseLast ?? ""}
-                    onChange={update("spouseLast")}
+                    onChange={updateNoSymbols("spouseLast")}
                     readOnly={!isEditing || !canEditField("spouseLast")}
                     placeholder="Enter last name"
                     className={inputClass(!isEditing)}
@@ -717,7 +895,7 @@ export default function VerifyCustomerPage() {
                   <input
                     type="text"
                     value={form.spouseSuffix ?? ""}
-                    onChange={update("spouseSuffix")}
+                    onChange={updateNoSymbols("spouseSuffix")}
                     readOnly={!isEditing || !canEditField("spouseSuffix")}
                     placeholder="Optional"
                     className={inputClass(!isEditing)}
@@ -725,14 +903,39 @@ export default function VerifyCustomerPage() {
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">Birthdate</label>
-                  <input
-                    type="text"
-                    value={form.spouseBirthdate ?? ""}
-                    onChange={update("spouseBirthdate")}
-                    readOnly={!isEditing || !canEditField("spouseBirthdate")}
-                    placeholder="MM/DD/YYYY"
-                    className={inputClass(!isEditing)}
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={form.spouseBirthdate ?? ""}
+                      onChange={updateDateIso("spouseBirthdate")}
+                      readOnly
+                      placeholder="Jul-24-1999"
+                      inputMode="numeric"
+                      pattern="[A-Za-z]{3}-\\d{2}-\\d{4}"
+                      className={inputClass(true)}
+                    />
+                    {isEditing && canEditField("spouseBirthdate") && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openDatePicker(spouseBirthdatePickerRef)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-neutral-200/80 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
+                          aria-label="Open calendar"
+                        >
+                          Calendar
+                        </button>
+                        <input
+                          ref={spouseBirthdatePickerRef}
+                          type="date"
+                          value={toIsoForDateInput(String(form.spouseBirthdate ?? ""))}
+                          onChange={(e) => setForm((p) => ({ ...p, spouseBirthdate: isoToMonDdYyyy(e.target.value) || p.spouseBirthdate }))}
+                          className="absolute -z-10 h-0 w-0 opacity-0"
+                          tabIndex={-1}
+                          aria-hidden="true"
+                        />
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -761,9 +964,11 @@ export default function VerifyCustomerPage() {
                   <input
                     type="tel"
                     value={form.cellphone ?? ""}
-                    onChange={update("cellphone")}
+                    onChange={updateDigits("cellphone", 12)}
                     readOnly={!isEditing || !canEditField("cellphone")}
                     placeholder="Enter cellphone number"
+                    inputMode="numeric"
+                    maxLength={12}
                     className={inputClass(!isEditing)}
                   />
                 </div>
@@ -772,9 +977,10 @@ export default function VerifyCustomerPage() {
                   <input
                     type="tel"
                     value={form.landline ?? ""}
-                    onChange={update("landline")}
+                    onChange={updateDigits("landline")}
                     readOnly={!isEditing || !canEditField("landline")}
                     placeholder="Enter landline number"
+                    inputMode="numeric"
                     className={inputClass(!isEditing)}
                   />
                 </div>
@@ -783,9 +989,10 @@ export default function VerifyCustomerPage() {
                   <input
                     type="email"
                     value={form.email ?? ""}
-                    onChange={update("email")}
+                    onChange={updateEmail("email")}
                     readOnly={!isEditing || !canEditField("email")}
                     placeholder="Enter email address"
+                    pattern=".+@.+"
                     className={inputClass(!isEditing)}
                   />
                 </div>
@@ -799,7 +1006,7 @@ export default function VerifyCustomerPage() {
                 <input
                   type="text"
                   value={form.cosignatory ?? ""}
-                  onChange={update("cosignatory")}
+                  onChange={updateNoSymbols("cosignatory")}
                   readOnly={!isEditing || !canEditField("cosignatory")}
                   placeholder="Enter full name"
                   className={inputClass(!isEditing)}
@@ -810,7 +1017,7 @@ export default function VerifyCustomerPage() {
                 <input
                   type="text"
                   value={form.witness ?? ""}
-                  onChange={update("witness")}
+                  onChange={updateNoSymbols("witness")}
                   readOnly={!isEditing || !canEditField("witness")}
                   placeholder="Enter witness name"
                   className={inputClass(!isEditing)}
@@ -967,8 +1174,8 @@ export default function VerifyCustomerPage() {
       {/* Submission confirmation / summary modal */}
       {showConfirmation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="app-modal-card w-full max-w-sm rounded-2xl border border-neutral-200/80 bg-[#faf9f6] p-6 shadow-xl sm:p-8">
-            <div className="flex flex-col items-center text-center">
+          <div className="app-modal-card flex w-full max-w-sm max-h-[85vh] flex-col rounded-2xl border border-neutral-200/80 bg-[#faf9f6] p-6 shadow-xl sm:p-8">
+            <div className="flex flex-1 flex-col items-center text-center min-h-0">
               <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
                 <svg
                   className="h-6 w-6 text-emerald-600"
@@ -989,7 +1196,7 @@ export default function VerifyCustomerPage() {
                 Your updates have been submitted. Please review the summary below.
               </p>
               {lastChangeSummary.length > 0 ? (
-                <div className="mt-4 w-full space-y-2 text-left text-sm text-neutral-700">
+                <div className="mt-4 w-full flex-1 min-h-0 overflow-y-auto space-y-2 text-left text-sm text-neutral-700 pr-1">
                   {lastChangeSummary.map((item) => (
                     <div key={item.label} className="rounded-xl border border-neutral-200/80 bg-white px-3.5 py-2.5">
                       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-neutral-500">{item.label}</p>

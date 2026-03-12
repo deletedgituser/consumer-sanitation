@@ -3,6 +3,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 
+function buildDiff(
+  before: Record<string, any>,
+  afterPatch: Record<string, any>,
+) {
+  const diff: Record<string, { before: string; after: string }> = {};
+  for (const [key, afterVal] of Object.entries(afterPatch)) {
+    if (afterVal === undefined) continue;
+    const beforeVal = (before as any)[key];
+    const b = String(beforeVal ?? "");
+    const a = String(afterVal ?? "");
+    if (b !== a) diff[key] = { before: b, after: a };
+  }
+  return diff;
+}
+
 /**
  * Convert snake_case field names (from API payload) to camelCase (Prisma schema)
  */
@@ -72,6 +87,11 @@ export async function GET(
           },
         },
         documents: true,
+        activityLogs: {
+          where: { action: "APPLICATION_UPDATED" },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        },
       },
     });
 
@@ -100,7 +120,7 @@ export async function PATCH(
     const { accountNumber } = await params;
 
     const body = await request.json();
-    const { action, ...updateData } = body;
+    const { action, source, ...updateData } = body;
 
     // Authentication is required for approve/decline, but optional for edits
     const session = await auth();
@@ -244,12 +264,16 @@ export async function PATCH(
 
     if (shouldCreateStatusNotification) {
       const notifType = newStatus === "APPROVED" ? "APPROVED" : newStatus === "DECLINED" ? "DECLINED" : null;
+
+      const fullName = [application.firstName, application.middleName, application.lastName]
+        .filter(Boolean)
+        .join(" ");
+
+      const verb = newStatus === "APPROVED" ? "approved" : newStatus === "DECLINED" ? "declined" : "";
       const notifMessage =
-        newStatus === "APPROVED"
-          ? "Application approved"
-          : newStatus === "DECLINED"
-            ? "Application declined"
-            : null;
+        notifType && verb
+          ? `Your application for ${fullName || application.firstName} (Record #${application.recordNumber}) has been ${verb}.`
+          : null;
 
       if (notifType && notifMessage) {
         const alreadyExists = await prisma.notification.findFirst({
@@ -266,6 +290,26 @@ export async function PATCH(
             },
           });
         }
+      }
+    }
+
+    // For customer edits, store a before/after diff in ActivityLog.metadata (even if an admin session cookie exists)
+    if ((action === "edit" || !action) && source === "customer") {
+      const diff = buildDiff(existing as any, filteredData as any);
+      if (Object.keys(diff).length > 0) {
+        await prisma.activityLog.create({
+          data: {
+            action: "APPLICATION_UPDATED",
+            description: `Customer submitted updates: ${application.recordNumber}`,
+            applicationId: application.id,
+            metadata: {
+              source: "customer",
+              recordNumber: application.recordNumber,
+              accountNumber: application.accountNumber,
+              diff,
+            },
+          },
+        });
       }
     }
 

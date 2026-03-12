@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import toast from "react-hot-toast";
@@ -37,44 +38,32 @@ export default function Home() {
       return;
     }
 
-    // verify existence by fetching from NextAuth API before navigation
     try {
       const trimmed = account.trim();
-      console.log("[Account Lookup] Starting fetch for:", trimmed);
-      
-      // always hit local endpoint; proxy rule handles /api/v1 in dev
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
       const res = await fetch(`/api/v1/accounts/${encodeURIComponent(trimmed)}`, {
         signal: controller.signal,
         headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
+          Accept: "application/json",
+          "Content-Type": "application/json",
         },
       });
-      
+
       clearTimeout(timeoutId);
-      
-      console.log("[Account Lookup] Response status:", res.status);
-      
+
       if (!res.ok) {
         const msg = await res.text();
-        console.error("[Account Lookup] Error response:", msg);
         toast.error(`Account not found: ${msg || res.statusText}`);
         return;
       }
-      
+
       const data = await res.json();
-      console.log("[Account Lookup] Success:", data.account_number);
-      
-      // success, navigate
-      toast.success(`Account found! Proceeding to verification...`);
+      toast.success("Account found! Proceeding to verification...");
       router.push(`/verify?account=${encodeURIComponent(trimmed)}`);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error("[Account Lookup] Exception:", errorMsg, err);
-      
       if (errorMsg === "The operation was aborted.") {
         toast.error("Request timed out. Please check your connection.");
       } else {
@@ -84,60 +73,69 @@ export default function Home() {
   }
 
   return (
-    <div className="relative flex min-h-screen min-h-[100dvh] w-full flex-col items-center justify-center overflow-x-hidden overflow-y-auto bg-[#f5f4f0] p-3 sm:p-5 md:p-6 lg:p-8 [padding:max(0.75rem,env(safe-area-inset-top))_max(0.75rem,env(safe-area-inset-right))_max(0.75rem,env(safe-area-inset-bottom))_max(0.75rem,env(safe-area-inset-left))]">
-      <div className="relative z-10 flex w-full max-w-2xl flex-1 flex-col items-center justify-center">
-        <div className="login-card relative flex w-full max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl sm:max-w-none sm:rounded-3xl sm:flex-row">
-          {/* Left panel – logo */}
-          <div className="flex min-h-[100px] w-full shrink-0 items-center justify-center p-4 sm:min-h-[140px] sm:p-6 md:w-[38%] md:min-h-[260px] lg:p-8 login-card-left">
-            <div className="relative flex h-full w-full max-w-[140px] items-center justify-center sm:max-w-[180px] md:max-w-[200px]">
-              <Image
-                src="/logo_aneco.png"
-                alt="ANECO - Agusan Del Norte Electric Cooperative"
-                width={200}
-                height={200}
-                className="h-auto w-full object-contain"
-                sizes="(max-width: 380px) 120px, (max-width: 480px) 140px, (max-width: 768px) 180px, 200px"
-                priority
-              />
-            </div>
+    <div className="relative flex min-h-screen min-h-[100dvh] items-center justify-center overflow-x-hidden overflow-y-auto bg-[#EAEFEF] p-4 sm:p-6 [padding:max(1rem,env(safe-area-inset-top))_max(1rem,env(safe-area-inset-right))_max(1rem,env(safe-area-inset-bottom))_max(1rem,env(safe-area-inset-left))]">
+      <div className="w-full max-w-5xl">
+        <div className="grid overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.12)] md:grid-cols-[1.4fr_1fr]">
+          {/* Left: form */}
+          <div className="p-6 sm:p-10">
+
+            <h1 className="mt-8 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Account Verification
+            </h1>
+            <p className="mt-2 text-sm text-slate-600">
+              Enter your account number to continue to ID verification.
+            </p>
+
+            <form className="mt-7 space-y-4" onSubmit={handleVerify}>
+              <div>
+                <label htmlFor="account" className="text-xs font-semibold text-slate-700">
+                  Account number
+                </label>
+                <div className="mt-2 flex min-h-[46px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm transition-colors focus-within:border-[#3D45AA] focus-within:ring-2 focus-within:ring-[#3D45AA]/20">
+                  <UserIcon className="h-5 w-5 shrink-0 text-slate-400" />
+                  <input
+                    id="account"
+                    type="text"
+                    placeholder="Enter account number"
+                    value={account}
+                    onChange={(e) => setAccount(e.target.value)}
+                    className="w-full min-w-0 border-0 bg-transparent text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0 [font-size:16px]"
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="mt-2 flex min-h-[46px] w-full items-center justify-center rounded-xl bg-[#F59E0B] px-4 py-3 text-base font-semibold text-white shadow-[0_12px_30px_rgba(245,158,11,0.28)] transition-colors duration-200 hover:bg-[#D97706] focus:outline-none focus:ring-2 focus:ring-[#F59E0B]/35 focus:ring-offset-2 active:scale-[0.99]"
+              >
+                Verify
+              </button>
+            </form>
           </div>
 
-          {/* Right panel – form */}
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-6 sm:px-6 sm:py-8 md:px-8 md:py-10 lg:px-10 lg:py-12 login-card-right">
-            <div className="w-full max-w-xs sm:max-w-[320px]">
-              <h1 className="text-lg font-medium tracking-tight text-neutral-900 text-center sm:text-xl sm:text-left md:text-2xl" style={{ letterSpacing: "-0.02em" }}>
-                Account Verification
-              </h1>
-              <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 text-center sm:mt-2 sm:text-left">
-                Enter your account number to continue.
+          {/* Right: welcome panel */}
+          <div className="relative overflow-hidden bg-[#3D45AA] p-8 sm:p-10">
+            <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" aria-hidden />
+            <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-[#FFF19B]/30 blur-2xl" aria-hidden />
+
+            <div className="relative flex h-full flex-col items-center justify-center text-center">
+              <div className="mb-6 flex items-center justify-center">
+                <Image
+                  src="/logo_aneco.png"
+                  alt="ANECO - Agusan Del Norte Electric Cooperative"
+                  width={320}
+                  height={320}
+                  className="h-auto w-[240px] object-contain drop-shadow-[0_18px_45px_rgba(0,0,0,0.30)] sm:w-[280px]"
+                  priority
+                />
+              </div>
+              <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                Welcome
+              </h2>
+              <p className="mt-2 max-w-sm text-sm leading-relaxed text-white/85">
+                Enter your account number to verify your identity and access your membership application.
               </p>
-
-              <form className="mt-4 space-y-4 sm:mt-6 sm:space-y-5" onSubmit={handleVerify}>
-                <div>
-                  <label htmlFor="account" className="sr-only">
-                    Account number
-                  </label>
-                  <div className="flex min-h-[44px] items-center gap-3 rounded-xl border border-neutral-200/80 bg-white/90 px-3 py-2.5 transition-all duration-200 focus-within:border-neutral-300 focus-within:shadow-md focus-within:shadow-neutral-200/50 focus-within:ring-2 focus-within:ring-neutral-200/60 sm:min-h-[48px] sm:rounded-2xl sm:px-4">
-                    <UserIcon className="h-5 w-5 shrink-0 text-neutral-400" />
-                    <input
-                      id="account"
-                      type="text"
-                      placeholder="Account number"
-                      value={account}
-                      onChange={(e) => setAccount(e.target.value)}
-                      className="w-full min-w-0 border-0 bg-transparent text-base text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-0 [font-size:16px]"
-                      autoComplete="off"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="flex min-h-[44px] w-full items-center justify-center rounded-xl bg-neutral-900 px-4 py-3 text-base font-medium text-white shadow-sm transition-all duration-200 hover:bg-neutral-800 hover:shadow-md active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-neutral-400 focus:ring-offset-2 sm:min-h-[48px] sm:rounded-2xl"
-                >
-                  Verify
-                </button>
-              </form>
             </div>
           </div>
         </div>

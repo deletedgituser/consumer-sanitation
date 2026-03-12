@@ -3,14 +3,21 @@ import { auth } from "@/auth"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-// Public routes that don't require authentication
+// Public routes that don't require authentication (and their subpaths, except "/" to avoid "//")
 const publicRoutes = ["/", "/admin-login", "/verify", "/verify-customer"]
+
+function isPublicPath(pathname: string) {
+  if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/v1")) return true
+  return publicRoutes.some(
+    (route) => pathname === route || (route !== "/" && pathname.startsWith(route + "/"))
+  )
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow public routes
-  if (publicRoutes.includes(pathname)) {
+  // Allow public routes and their subpaths (e.g. /verify-customer/select, /verify-customer/landing)
+  if (isPublicPath(pathname)) {
     return NextResponse.next()
   }
 

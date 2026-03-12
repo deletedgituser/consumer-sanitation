@@ -86,11 +86,14 @@ const authConfig: NextAuthConfig = {
       const isLoggedIn = !!auth?.user
       const { pathname } = request.nextUrl
 
-      // Public routes that don't require auth
+      // Public routes that don't require auth (and their subpaths, except "/" to avoid "//")
       const publicRoutes = ["/", "/admin-login", "/verify", "/verify-customer"]
-      const isPublicRoute = publicRoutes.some(
-        (route) => pathname === route || pathname.startsWith("/api/auth") || pathname.startsWith("/api/v1")
-      )
+      const isPublicRoute =
+        pathname.startsWith("/api/auth") ||
+        pathname.startsWith("/api/v1") ||
+        publicRoutes.some(
+          (route) => pathname === route || (route !== "/" && pathname.startsWith(route + "/"))
+        )
 
       if (isPublicRoute) return true
       if (!isLoggedIn) return false

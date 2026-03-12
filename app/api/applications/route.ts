@@ -52,7 +52,8 @@ export async function POST(request: NextRequest) {
 
     // Check if application already exists
     const existing = await prisma.application.findUnique({
-      where: { accountNumber: body.accountNumber },
+      // cast to any to support accountNumber unique lookup regardless of generated TypeScript helper
+      where: { accountNumber: body.accountNumber } as any,
       include: {
         createdBy: {
           select: {
@@ -64,7 +65,32 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // If we already have an application, optionally update notes (e.g. to store update reason)
     if (existing) {
+      if (typeof body.notes === "string" && body.notes.trim().length > 0 && body.notes !== existing.notes) {
+        const updated = await prisma.application.update({
+          where: { accountNumber: body.accountNumber } as any,
+          data: { notes: body.notes },
+          include: {
+            createdBy: {
+              select: {
+                id: true,
+                username: true,
+                name: true,
+              },
+            },
+            updatedBy: {
+              select: {
+                id: true,
+                username: true,
+                name: true,
+              },
+            },
+          },
+        });
+        return NextResponse.json(updated, { status: 200 });
+      }
+
       return NextResponse.json(existing, { status: 200 });
     }
 
@@ -85,6 +111,29 @@ export async function POST(request: NextRequest) {
             name: true,
           },
         },
+      },
+    });
+
+    // Create a pending notification (admin + customer views)
+    const fullName = [application.firstName, application.middleName, application.lastName].filter(Boolean).join(" ");
+
+    // Try to extract a friendly update type from notes, e.g. \"Update type: Correct my information ...\"
+    let updateType: string | null = null;
+    if (typeof application.notes === "string") {
+      const match = application.notes.match(/^\s*Update type\s*:\s*(.+)\s*$/im);
+      if (match?.[1]) updateType = match[1].trim();
+    }
+
+    const basePendingMessage = updateType
+      ? `Name: ${fullName || application.firstName} · Application type: ${updateType}`
+      : `Name: ${fullName || application.firstName} · Application type: ${application.appType?.toString() || "Pending update"}`;
+
+    await (prisma as any).notification.create({
+      data: {
+        applicationId: application.id,
+        type: "PENDING",
+        message: basePendingMessage,
+        read: false,
       },
     });
 

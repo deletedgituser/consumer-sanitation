@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { extractOwnerName, isNameMatchFromOcr } from "@/lib/account-verification";
-import { signOut } from "next-auth/react";
 
 type CameraStatus = "permission" | "loading" | "ready" | "scanning" | "error" | "denied";
 
@@ -238,7 +237,7 @@ export default function VerifyPage() {
         </h1>
         <button
           type="button"
-          onClick={() => signOut({ callbackUrl: "/" })}
+          onClick={() => router.push("/")}
           className="text-sm font-medium text-red-600 transition-colors hover:text-red-700"
         >
           Logout
