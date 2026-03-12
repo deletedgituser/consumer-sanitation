@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { mapFormToApi } from "@/lib/account-verification";
@@ -45,6 +45,7 @@ type Customer = {
   dateIssued: string;
   notes: string;
   accountNumber: string;
+  pendingDiff?: Record<string, { before: string; after: string }> | null;
 };
 
 // activity log type returned from /api/logs
@@ -84,7 +85,12 @@ function CustomerDetail({
   onCancel?: () => void;
 }) {
   const isDark = theme === "dark";
-  const isPending = customer.status === "Pending";
+  const isPending = normalizeStatus(customer.status) === "pending";
+  const updateType = useMemo(() => {
+    const notes = (customer.notes ?? "").toString();
+    const match = notes.match(/^\s*Update type\s*:\s*(.+)\s*$/im);
+    return match?.[1]?.trim() || "";
+  }, [customer.notes]);
   const textPrimary = isDark ? "text-white" : "text-slate-800";
   const textMuted = isDark ? "text-slate-300" : "text-slate-500";
   const boxClass = isDark
@@ -113,6 +119,79 @@ function CustomerDetail({
   const display = isEditing ? draft : customer;
   const setDisplay = setDraft;
 
+  const diffLabels: Record<string, string> = {
+    firstName: "First name",
+    middleName: "Middle name",
+    lastName: "Last name",
+    suffixName: "Suffix",
+    birthdate: "Birthdate",
+    gender: "Gender",
+    civilStatus: "Civil status",
+    spouseFirst: "Spouse first name",
+    spouseMiddle: "Spouse middle name",
+    spouseLast: "Spouse last name",
+    spouseSuffix: "Spouse suffix",
+    spouseBirthdate: "Spouse birthdate",
+    residenceAddress: "Residence address",
+    cellphone: "Cellphone",
+    landline: "Landline",
+    email: "Email",
+    cosignatory: "Co-signatory",
+    witness: "Witness",
+    notes: "Notes",
+  };
+
+  const pendingDiffEntries = useMemo(() => {
+    const diff = customer.pendingDiff;
+    if (!diff || typeof diff !== "object") return [];
+    return Object.entries(diff)
+      .filter(([k]) => k !== "status" && k !== "orNumber" && k !== "dateIssued" && k !== "area")
+      .map(([k, v]) => ({
+        key: k,
+        label: diffLabels[k] ?? k,
+        before: (v?.before ?? "").toString(),
+        after: (v?.after ?? "").toString(),
+      }));
+  }, [customer.pendingDiff]);
+
+  const updatedHeaderClass = isDark
+    ? "rounded-t-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white"
+    : "rounded-t-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white";
+
+  const updatedHeader = (label: string) => (
+    <div className="flex items-center gap-2">
+      <span>{label}</span>
+      <span
+        className={
+          isDark
+            ? "rounded-full bg-emerald-900/30 px-2 py-0.5 text-[11px] font-bold text-emerald-100"
+            : "rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-900"
+        }
+      >
+        (New)
+      </span>
+    </div>
+  );
+
+  const getAfter = (key: string) => {
+    const v = customer.pendingDiff?.[key];
+    return v?.after ?? "";
+  };
+  const getBefore = (key: string) => {
+    const v = customer.pendingDiff?.[key];
+    return v?.before ?? "";
+  };
+  const originalValue = (key: keyof Customer, current: unknown) => {
+    if (customer.pendingDiff?.[key as string]) {
+      const b = getBefore(key as string);
+      return b !== "" ? b : "—";
+    }
+    const s = String(current ?? "");
+    return s.trim() ? s : "—";
+  };
+
+  const hasAnyDiff = (keys: string[]) => keys.some((k) => !!customer.pendingDiff?.[k]);
+
   const modalOverlayClass = "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4";
   const modalPanelClass = isDark
     ? "rounded-xl border border-slate-600 bg-slate-800 p-6 shadow-xl max-w-md w-full"
@@ -131,6 +210,16 @@ function CustomerDetail({
           Back to list
         </button>
         <div className="flex flex-wrap items-center gap-3">
+          {updateType && (
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                isDark ? "bg-slate-700 text-slate-100" : "bg-slate-100 text-slate-700"
+              }`}
+              title="Selected update type (from customer)"
+            >
+              {updateType}
+            </span>
+          )}
           <span className={`text-sm ${isDark ? "text-[#FFF19B]" : textMuted}`}>Record #{customer.recordNumber}</span>
           {isEditing && onRequestDone && onCancel ? (
             <div className="flex items-center gap-2 rounded-lg px-3 py-2">
@@ -264,31 +353,31 @@ function CustomerDetail({
         </div>
       </div>
 
-      {/* Applicant (2'x2' photo) */}
+      {/* Applicant Information */}
       <div className="mb-4">
-        <div className={sectionHeaderClass}>Applicant (2&apos;x2&apos; photo)</div>
+        <div className={sectionHeaderClass}>Applicant Information</div>
         <div className={boxClass}>
           <div className="flex flex-col gap-4 sm:flex-row">
             <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>First Name</p>
-                {isEditing ? <input value={display.firstName} onChange={(e) => setDisplay((d) => ({ ...d, firstName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.firstName}</p>}
+                {isEditing ? <input value={display.firstName} onChange={(e) => setDisplay((d) => ({ ...d, firstName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("firstName", customer.firstName)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Middle Name</p>
-                {isEditing ? <input value={display.middleName} onChange={(e) => setDisplay((d) => ({ ...d, middleName: e.target.value }))} className={inputClass} disabled={display.noMiddleName} /> : <p className={textPrimary}>{customer.noMiddleName ? "—" : customer.middleName || "—"}</p>}
+                {isEditing ? <input value={display.middleName} onChange={(e) => setDisplay((d) => ({ ...d, middleName: e.target.value }))} className={inputClass} disabled={display.noMiddleName} /> : <p className={textPrimary}>{customer.noMiddleName ? "—" : originalValue("middleName", customer.middleName)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Last Name</p>
-                {isEditing ? <input value={display.lastName} onChange={(e) => setDisplay((d) => ({ ...d, lastName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.lastName}</p>}
+                {isEditing ? <input value={display.lastName} onChange={(e) => setDisplay((d) => ({ ...d, lastName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("lastName", customer.lastName)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Suffix Name</p>
-                {isEditing ? <input value={display.suffixName} onChange={(e) => setDisplay((d) => ({ ...d, suffixName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.suffixName || "—"}</p>}
+                {isEditing ? <input value={display.suffixName} onChange={(e) => setDisplay((d) => ({ ...d, suffixName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("suffixName", customer.suffixName)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Birthdate</p>
-                {isEditing ? <input value={display.birthdate} onChange={(e) => setDisplay((d) => ({ ...d, birthdate: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.birthdate}</p>}
+                {isEditing ? <input value={display.birthdate} onChange={(e) => setDisplay((d) => ({ ...d, birthdate: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("birthdate", customer.birthdate)}</p>}
               </div>
               <div className="flex items-end">
                 {isEditing ? (
@@ -308,12 +397,12 @@ function CustomerDetail({
                     <option value="female">Female</option>
                   </select>
                 ) : (
-                  <p className={textPrimary}>{customer.gender === "male" ? "Male" : "Female"}</p>
+                  <p className={textPrimary}>{originalValue("gender", customer.gender === "male" ? "Male" : "Female")}</p>
                 )}
               </div>
               <div className="sm:col-span-2">
                 <p className={`text-xs font-medium ${textMuted}`}>Civil Status</p>
-                {isEditing ? <input value={display.civilStatus} onChange={(e) => setDisplay((d) => ({ ...d, civilStatus: e.target.value }))} className={inputClass} /> : <p className={`capitalize ${textPrimary}`}>{customer.civilStatus}</p>}
+                {isEditing ? <input value={display.civilStatus} onChange={(e) => setDisplay((d) => ({ ...d, civilStatus: e.target.value }))} className={inputClass} /> : <p className={`capitalize ${textPrimary}`}>{originalValue("civilStatus", customer.civilStatus)}</p>}
               </div>
             </div>
             <div className="flex shrink-0 justify-center sm:justify-end">
@@ -325,6 +414,64 @@ function CustomerDetail({
         </div>
       </div>
 
+      {/* Updated Applicant Information (only show changed fields) */}
+      {isPending &&
+        !isEditing &&
+        hasAnyDiff(["firstName", "middleName", "lastName", "suffixName", "birthdate", "gender", "civilStatus"]) && (
+          <div className="mb-4">
+            <div className={updatedHeaderClass}>{updatedHeader("Updated Applicant Information")}</div>
+            <div className={boxClass}>
+              <div className="flex flex-col gap-4 sm:flex-row">
+                <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
+                  {customer.pendingDiff?.firstName && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>First Name</p>
+                      <p className={textPrimary}>{getAfter("firstName") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.middleName && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>Middle Name</p>
+                      <p className={textPrimary}>{getAfter("middleName") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.lastName && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>Last Name</p>
+                      <p className={textPrimary}>{getAfter("lastName") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.suffixName && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>Suffix Name</p>
+                      <p className={textPrimary}>{getAfter("suffixName") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.birthdate && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>Birthdate</p>
+                      <p className={textPrimary}>{getAfter("birthdate") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.gender && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>Gender</p>
+                      <p className={textPrimary}>{getAfter("gender") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.civilStatus && (
+                    <div className="sm:col-span-2">
+                      <p className={`text-xs font-medium ${textMuted}`}>Civil Status</p>
+                      <p className={`capitalize ${textPrimary}`}>{getAfter("civilStatus") || "—"}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+
       {/* Applicant's Spouse */}
       <div className="mb-4">
         <div className={sectionHeaderClass}>Applicant&apos;s Spouse (Husband/Wife) Photo</div>
@@ -333,23 +480,23 @@ function CustomerDetail({
             <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>First Name</p>
-                {isEditing ? <input value={display.spouseFirst} onChange={(e) => setDisplay((d) => ({ ...d, spouseFirst: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.spouseFirst || "—"}</p>}
+                {isEditing ? <input value={display.spouseFirst} onChange={(e) => setDisplay((d) => ({ ...d, spouseFirst: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseFirst", customer.spouseFirst)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Middle Name</p>
-                {isEditing ? <input value={display.spouseMiddle} onChange={(e) => setDisplay((d) => ({ ...d, spouseMiddle: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.spouseMiddle || "—"}</p>}
+                {isEditing ? <input value={display.spouseMiddle} onChange={(e) => setDisplay((d) => ({ ...d, spouseMiddle: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseMiddle", customer.spouseMiddle)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Last Name</p>
-                {isEditing ? <input value={display.spouseLast} onChange={(e) => setDisplay((d) => ({ ...d, spouseLast: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.spouseLast || "—"}</p>}
+                {isEditing ? <input value={display.spouseLast} onChange={(e) => setDisplay((d) => ({ ...d, spouseLast: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseLast", customer.spouseLast)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Suffix Name</p>
-                {isEditing ? <input value={display.spouseSuffix} onChange={(e) => setDisplay((d) => ({ ...d, spouseSuffix: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.spouseSuffix || "—"}</p>}
+                {isEditing ? <input value={display.spouseSuffix} onChange={(e) => setDisplay((d) => ({ ...d, spouseSuffix: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseSuffix", customer.spouseSuffix)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Birthdate</p>
-                {isEditing ? <input value={display.spouseBirthdate} onChange={(e) => setDisplay((d) => ({ ...d, spouseBirthdate: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.spouseBirthdate || "—"}</p>}
+                {isEditing ? <input value={display.spouseBirthdate} onChange={(e) => setDisplay((d) => ({ ...d, spouseBirthdate: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseBirthdate", customer.spouseBirthdate)}</p>}
               </div>
             </div>
             <div className="flex shrink-0 justify-center sm:justify-end">
@@ -361,30 +508,112 @@ function CustomerDetail({
         </div>
       </div>
 
+      {/* Updated Spouse (only changed fields) */}
+      {isPending &&
+        !isEditing &&
+        hasAnyDiff(["spouseFirst", "spouseMiddle", "spouseLast", "spouseSuffix", "spouseBirthdate"]) && (
+          <div className="mb-4">
+            <div className={updatedHeaderClass}>{updatedHeader("Updated Applicant\u0027s Spouse")}</div>
+            <div className={boxClass}>
+              <div className="flex flex-col gap-4 sm:flex-row">
+                <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
+                  {customer.pendingDiff?.spouseFirst && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>First Name</p>
+                      <p className={textPrimary}>{getAfter("spouseFirst") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.spouseMiddle && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>Middle Name</p>
+                      <p className={textPrimary}>{getAfter("spouseMiddle") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.spouseLast && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>Last Name</p>
+                      <p className={textPrimary}>{getAfter("spouseLast") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.spouseSuffix && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>Suffix Name</p>
+                      <p className={textPrimary}>{getAfter("spouseSuffix") || "—"}</p>
+                    </div>
+                  )}
+                  {customer.pendingDiff?.spouseBirthdate && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>Birthdate</p>
+                      <p className={textPrimary}>{getAfter("spouseBirthdate") || "—"}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       {/* Residence & Contact */}
       <div className="mb-4">
         <div className={sectionHeaderClass}>Residence & Contact</div>
         <div className={`${boxClass} space-y-3`}>
           <div>
             <p className={`text-xs font-medium ${textMuted}`}>Residence Address</p>
-            {isEditing ? <input value={display.residenceAddress} onChange={(e) => setDisplay((d) => ({ ...d, residenceAddress: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.residenceAddress || "—"}</p>}
+            {isEditing ? <input value={display.residenceAddress} onChange={(e) => setDisplay((d) => ({ ...d, residenceAddress: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("residenceAddress", customer.residenceAddress)}</p>}
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Cellphone No.</p>
-              {isEditing ? <input value={display.cellphone} onChange={(e) => setDisplay((d) => ({ ...d, cellphone: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.cellphone || "—"}</p>}
+              {isEditing ? <input value={display.cellphone} onChange={(e) => setDisplay((d) => ({ ...d, cellphone: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("cellphone", customer.cellphone)}</p>}
             </div>
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Landline No.</p>
-              {isEditing ? <input value={display.landline} onChange={(e) => setDisplay((d) => ({ ...d, landline: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.landline || "—"}</p>}
+              {isEditing ? <input value={display.landline} onChange={(e) => setDisplay((d) => ({ ...d, landline: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("landline", customer.landline)}</p>}
             </div>
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>E-mail Address</p>
-              {isEditing ? <input value={display.email} onChange={(e) => setDisplay((d) => ({ ...d, email: e.target.value }))} className={inputClass} type="email" /> : <p className={textPrimary}>{customer.email || "—"}</p>}
+              {isEditing ? <input value={display.email} onChange={(e) => setDisplay((d) => ({ ...d, email: e.target.value }))} className={inputClass} type="email" /> : <p className={textPrimary}>{originalValue("email", customer.email)}</p>}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Updated Residence & Contact (only changed fields) */}
+      {isPending &&
+        !isEditing &&
+        hasAnyDiff(["residenceAddress", "cellphone", "landline", "email"]) && (
+          <div className="mb-4">
+            <div className={updatedHeaderClass}>{updatedHeader("Updated Residence & Contact")}</div>
+            <div className={`${boxClass} space-y-3`}>
+              {customer.pendingDiff?.residenceAddress && (
+                <div>
+                  <p className={`text-xs font-medium ${textMuted}`}>Residence Address</p>
+                  <p className={textPrimary}>{getAfter("residenceAddress") || "—"}</p>
+                </div>
+              )}
+              <div className="grid gap-3 sm:grid-cols-3">
+                {customer.pendingDiff?.cellphone && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Cellphone No.</p>
+                    <p className={textPrimary}>{getAfter("cellphone") || "—"}</p>
+                  </div>
+                )}
+                {customer.pendingDiff?.landline && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Landline No.</p>
+                    <p className={textPrimary}>{getAfter("landline") || "—"}</p>
+                  </div>
+                )}
+                {customer.pendingDiff?.email && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>E-mail Address</p>
+                    <p className={textPrimary}>{getAfter("email") || "—"}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Privacy Option */}
       <div className="mb-4">
@@ -439,11 +668,11 @@ function CustomerDetail({
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Co-signatory</p>
-              {isEditing ? <input value={display.cosignatory} onChange={(e) => setDisplay((d) => ({ ...d, cosignatory: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.cosignatory || "—"}</p>}
+              {isEditing ? <input value={display.cosignatory} onChange={(e) => setDisplay((d) => ({ ...d, cosignatory: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("cosignatory", customer.cosignatory)}</p>}
             </div>
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Witness</p>
-              {isEditing ? <input value={display.witness} onChange={(e) => setDisplay((d) => ({ ...d, witness: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.witness || "—"}</p>}
+              {isEditing ? <input value={display.witness} onChange={(e) => setDisplay((d) => ({ ...d, witness: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("witness", customer.witness)}</p>}
             </div>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -462,16 +691,49 @@ function CustomerDetail({
           </div>
           <div className="mt-3">
             <p className={`text-xs font-medium ${textMuted}`}>Notes</p>
-            {isEditing ? <textarea value={display.notes} onChange={(e) => setDisplay((d) => ({ ...d, notes: e.target.value }))} className={`${inputClass} min-h-[80px]`} rows={3} /> : <p className={textPrimary}>{customer.notes || "—"}</p>}
+            {isEditing ? <textarea value={display.notes} onChange={(e) => setDisplay((d) => ({ ...d, notes: e.target.value }))} className={`${inputClass} min-h-[80px]`} rows={3} /> : <p className={textPrimary}>{originalValue("notes", customer.notes)}</p>}
           </div>
         </div>
       </div>
+
+      {/* Updated Other Details (only changed fields) */}
+      {isPending &&
+        !isEditing &&
+        hasAnyDiff(["cosignatory", "witness", "notes"]) && (
+          <div className="mb-4">
+            <div className={updatedHeaderClass}>{updatedHeader("Updated Other Details")}</div>
+            <div className={boxClass}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {customer.pendingDiff?.cosignatory && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Co-signatory</p>
+                    <p className={textPrimary}>{getAfter("cosignatory") || "—"}</p>
+                  </div>
+                )}
+                {customer.pendingDiff?.witness && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Witness</p>
+                    <p className={textPrimary}>{getAfter("witness") || "—"}</p>
+                  </div>
+                )}
+              </div>
+              {customer.pendingDiff?.notes && (
+                <div className="mt-3">
+                  <p className={`text-xs font-medium ${textMuted}`}>Notes</p>
+                  <p className={textPrimary}>{getAfter("notes") || "—"}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
     </div>
   );
 }
 
 type NavId = "dashboard" | "pending" | "approved" | "declined" | "logs" | "statistics";
 type Theme = "light" | "dark";
+
+const normalizeStatus = (status: unknown) => String(status ?? "").trim().toLowerCase();
 
 const navItems: { id: NavId; label: string; icon: React.ReactNode }[] = [
   {
@@ -643,16 +905,44 @@ export default function AdminDashboardPage() {
   const [doneConfirmOpen, setDoneConfirmOpen] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<Customer | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const notifMenuRef = useRef<HTMLDivElement>(null);
   
   // API state
   const [applications, setApplications] = useState<Customer[]>([]);
   const [isLoadingApplications, setIsLoadingApplications] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  type AdminNotification = {
+    id: string;
+    message: string;
+    type: string;
+    read: boolean;
+    createdAt: string;
+    application?: {
+      id: string;
+      accountNumber: string | null;
+      recordNumber: string;
+      firstName: string;
+      lastName: string;
+      status: string;
+      createdAt: string;
+    } | null;
+  };
+
+  const [notifMenuOpen, setNotifMenuOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AdminNotification[]>([]);
+  const [notifError, setNotifError] = useState<string | null>(null);
+  const [notifSince, setNotifSince] = useState<string | null>(null);
+
   // logs state
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
+
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
+  );
 
   // shared table classes for log view
   const thClassMain = theme === "dark" ? "px-4 py-3 font-semibold text-white" : "px-4 py-3 font-semibold text-slate-700";
@@ -676,10 +966,74 @@ export default function AdminDashboardPage() {
 
   const getEffectiveStatus = (c: Customer) => statusOverrides[c.id] ?? c.status;
 
+  const mapApiApplicationToCustomer = (app: any): Customer => ({
+    id: app.id,
+    recordNumber: app.recordNumber,
+    appType: app.appType.toLowerCase(),
+    membership: app.membership.toLowerCase(),
+    area: app.area,
+    district: app.district,
+    barangay: app.barangay,
+    firstName: app.firstName,
+    middleName: app.middleName,
+    lastName: app.lastName,
+    suffixName: app.suffixName || "",
+    birthdate: app.birthdate,
+    noMiddleName: app.noMiddleName,
+    gender: app.gender.toLowerCase(),
+    civilStatus: app.civilStatus,
+    spouseFirst: app.spouseFirst || "",
+    spouseMiddle: app.spouseMiddle || "",
+    spouseLast: app.spouseLast || "",
+    spouseSuffix: app.spouseSuffix || "",
+    spouseBirthdate: app.spouseBirthdate || "",
+    residenceAddress: app.residenceAddress,
+    cellphone: app.cellphone,
+    landline: app.landline || "",
+    email: app.email,
+    privacyConsent: app.privacyConsent,
+    privacyNewsletter: app.privacyNewsletter,
+    privacyEmail: app.privacyEmail,
+    privacySms: app.privacySms,
+    privacyPhone: app.privacyPhone,
+    privacySocial: app.privacySocial,
+    cosignatory: app.cosignatory || "",
+    witness: app.witness || "",
+    status:
+      app.status === "SIGNED_UP"
+        ? "Signed up"
+        : app.status === "PENDING"
+          ? "Pending"
+          : app.status === "APPROVED"
+            ? "Approved"
+            : app.status === "DECLINED"
+              ? "Declined"
+              : app.status,
+    orNumber: app.orNumber,
+    dateIssued: app.dateIssued,
+    notes: app.notes || "",
+    accountNumber: app.accountNumber || "",
+    pendingDiff: (() => {
+      const logs = Array.isArray(app.activityLogs) ? app.activityLogs : [];
+      const customerLog = logs.find((l: any) => {
+        const md = l?.metadata;
+        if (!md?.diff) return false;
+        // Prefer explicit marker; otherwise treat unauthenticated update logs as customer-submitted.
+        if (md?.source === "customer") return true;
+        return !l?.userId;
+      });
+      const diff = customerLog?.metadata?.diff;
+      return diff && typeof diff === "object" ? diff : null;
+    })(),
+  });
+
   // Calculate counts
-  const pendingCount = applications.filter((c) => getEffectiveStatus(c) === "Pending").length;
-  const approvedCount = applications.filter((c) => getEffectiveStatus(c) === "Approved" || getEffectiveStatus(c) === "Signed up").length;
-  const declinedCount = applications.filter((c) => getEffectiveStatus(c) === "Declined").length;
+  const pendingCount = applications.filter((c) => normalizeStatus(getEffectiveStatus(c)) === "pending").length;
+  const approvedCount = applications.filter((c) => {
+    const s = normalizeStatus(getEffectiveStatus(c));
+    return s === "approved" || s === "signed up" || s === "signed_up";
+  }).length;
+  const declinedCount = applications.filter((c) => normalizeStatus(getEffectiveStatus(c)) === "declined").length;
 
   // Fetch applications from API
   const fetchApplications = async () => {
@@ -689,51 +1043,8 @@ export default function AdminDashboardPage() {
       const response = await fetch("/api/applications");
       if (!response.ok) throw new Error("Failed to fetch applications");
       const data = await response.json();
-      
-      // Map API data to Customer type
-      const mappedData = data.map((app: any) => ({
-        id: app.id,
-        recordNumber: app.recordNumber,
-        appType: app.appType.toLowerCase(),
-        membership: app.membership.toLowerCase(),
-        area: app.area,
-        district: app.district,
-        barangay: app.barangay,
-        firstName: app.firstName,
-        middleName: app.middleName,
-        lastName: app.lastName,
-        suffixName: app.suffixName || "",
-        birthdate: app.birthdate,
-        noMiddleName: app.noMiddleName,
-        gender: app.gender.toLowerCase(),
-        civilStatus: app.civilStatus,
-        spouseFirst: app.spouseFirst || "",
-        spouseMiddle: app.spouseMiddle || "",
-        spouseLast: app.spouseLast || "",
-        spouseSuffix: app.spouseSuffix || "",
-        spouseBirthdate: app.spouseBirthdate || "",
-        residenceAddress: app.residenceAddress,
-        cellphone: app.cellphone,
-        landline: app.landline || "",
-        email: app.email,
-        privacyConsent: app.privacyConsent,
-        privacyNewsletter: app.privacyNewsletter,
-        privacyEmail: app.privacyEmail,
-        privacySms: app.privacySms,
-        privacyPhone: app.privacyPhone,
-        privacySocial: app.privacySocial,
-        cosignatory: app.cosignatory || "",
-        witness: app.witness || "",
-        status: app.status === "SIGNED_UP" ? "Signed up" : 
-                app.status === "PENDING" ? "Pending" :
-                app.status === "APPROVED" ? "Approved" :
-                app.status === "DECLINED" ? "Declined" : app.status,
-        orNumber: app.orNumber,
-        dateIssued: app.dateIssued,
-        notes: app.notes || "",
-        accountNumber: app.accountNumber || "",
-      }));
-      
+
+      const mappedData = data.map((app: any) => mapApiApplicationToCustomer(app));
       setApplications(mappedData);
     } catch {
       setError("Failed to load applications");
@@ -741,6 +1052,27 @@ export default function AdminDashboardPage() {
       // setApplications(mockCustomers);
     } finally {
       setIsLoadingApplications(false);
+    }
+  };
+
+  const fetchApplicationByAccount = async (accountNumber: string): Promise<Customer | null> => {
+    try {
+      const resp = await fetch(`/api/applications/${encodeURIComponent(accountNumber)}`);
+      if (!resp.ok) throw new Error("Failed to fetch application");
+      const app = await resp.json();
+      const mapped = mapApiApplicationToCustomer(app);
+      setApplications((prev) => {
+        const idx = prev.findIndex((c) => c.accountNumber === accountNumber);
+        if (idx === -1) {
+          return [mapped, ...prev];
+        }
+        const next = [...prev];
+        next[idx] = mapped;
+        return next;
+      });
+      return mapped;
+    } catch {
+      return null;
     }
   };
 
@@ -781,10 +1113,167 @@ export default function AdminDashboardPage() {
       if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
         setProfileMenuOpen(false);
       }
+      if (notifMenuRef.current && !notifMenuRef.current.contains(e.target as Node)) {
+        setNotifMenuOpen(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      setNotifError(null);
+      const resp = await fetch("/api/notifications?unread=false&limit=20");
+      if (!resp.ok) throw new Error("Failed to fetch notifications");
+      const data = await resp.json();
+      // newest first from API
+      setNotifications(data);
+    } catch (e) {
+      setNotifError(e instanceof Error ? e.message : "Failed to fetch notifications");
+    }
+  };
+
+  // Notifications: SSE + polling fallback
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let es: EventSource | null = null;
+    let pollTimer: number | null = null;
+    let stopped = false;
+
+    const startPolling = () => {
+      if (pollTimer) return;
+      void fetchNotifications();
+      pollTimer = window.setInterval(() => {
+        void fetchNotifications();
+      }, 20000);
+    };
+
+    // initial fetch
+    void fetchNotifications();
+
+    try {
+      const url = new URL("/api/notifications/stream", window.location.origin);
+      if (notifSince) url.searchParams.set("since", notifSince);
+      es = new EventSource(url.toString());
+
+      es.addEventListener("ready", (evt) => {
+        try {
+          const payload = JSON.parse((evt as MessageEvent).data);
+          if (payload?.since) setNotifSince(String(payload.since));
+        } catch {
+          // ignore
+        }
+      });
+
+      es.addEventListener("notification", (evt) => {
+        try {
+          const payload = JSON.parse((evt as MessageEvent).data) as { notifications?: AdminNotification[]; since?: string };
+          if (payload?.since) setNotifSince(String(payload.since));
+          const incoming = Array.isArray(payload?.notifications) ? payload.notifications : [];
+          if (incoming.length === 0) return;
+
+          // merge new notifications (dedupe by id) while keeping newest-first order
+          setNotifications((prev) => {
+            const seen = new Set(prev.map((n) => n.id));
+            const merged = [...incoming.filter((n) => !seen.has(n.id)).reverse(), ...prev];
+            return merged.slice(0, 50);
+          });
+        } catch {
+          // ignore malformed
+        }
+      });
+
+      es.onerror = () => {
+        if (stopped) return;
+        try {
+          es?.close();
+        } catch {
+          // ignore
+        }
+        es = null;
+        startPolling();
+      };
+    } catch {
+      startPolling();
+    }
+
+    return () => {
+      stopped = true;
+      if (pollTimer) window.clearInterval(pollTimer);
+      try {
+        es?.close();
+      } catch {
+        // ignore
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  const markNotificationsRead = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    // optimistic update
+    setNotifications((prev) => prev.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n)));
+    try {
+      const resp = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, read: true }),
+      });
+      if (!resp.ok) throw new Error("Failed to mark notifications read");
+    } catch {
+      // re-fetch to reconcile if patch fails
+      void fetchNotifications();
+    }
+  };
+
+  const markNotificationsUnread = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    // optimistic update
+    setNotifications((prev) => prev.map((n) => (ids.includes(n.id) ? { ...n, read: false } : n)));
+    try {
+      const resp = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, read: false }),
+      });
+      if (!resp.ok) throw new Error("Failed to mark notifications unread");
+    } catch {
+      void fetchNotifications();
+    }
+  };
+
+  const handleNotificationClick = async (n: AdminNotification) => {
+    await markNotificationsRead([n.id]);
+    const acct = n.application?.accountNumber ?? null;
+    if (acct) {
+      const fresh = await fetchApplicationByAccount(acct);
+      if (fresh) {
+        // Ensure we show the latest server state when opening from notifications.
+        // Stale local drafts/overrides can hide actions until a full refresh.
+        setCustomerEdits((prev) => {
+          if (!prev[fresh.id]) return prev;
+          const next = { ...prev };
+          delete next[fresh.id];
+          return next;
+        });
+        setStatusOverrides((prev) => {
+          if (!prev[fresh.id]) return prev;
+          const next = { ...prev };
+          delete next[fresh.id];
+          return next;
+        });
+        setSelected(fresh);
+        setDetailEditMode(false);
+        const normalized = normalizeStatus(fresh.status);
+        if (normalized === "pending") setActiveNav("pending");
+        else if (normalized === "declined") setActiveNav("declined");
+        else if (normalized === "approved" || normalized === "signed up" || normalized === "signed_up") setActiveNav("approved");
+        else setActiveNav("dashboard");
+      }
+    }
+    setNotifMenuOpen(false);
+  };
 
   // fetch logs when logs view is selected
   useEffect(() => {
@@ -799,11 +1288,14 @@ export default function AdminDashboardPage() {
     activeNav === "dashboard"
       ? applications
       : activeNav === "pending"
-        ? applications.filter((c) => getEffectiveStatus(c) === "Pending")
+        ? applications.filter((c) => normalizeStatus(getEffectiveStatus(c)) === "pending")
         : activeNav === "approved"
-          ? applications.filter((c) => getEffectiveStatus(c) === "Approved" || getEffectiveStatus(c) === "Signed up")
+          ? applications.filter((c) => {
+              const s = normalizeStatus(getEffectiveStatus(c));
+              return s === "approved" || s === "signed up" || s === "signed_up";
+            })
           : activeNav === "declined"
-            ? applications.filter((c) => getEffectiveStatus(c) === "Declined")
+            ? applications.filter((c) => normalizeStatus(getEffectiveStatus(c)) === "declined")
             : applications;
 
   const effectiveSelected =
@@ -963,12 +1455,16 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleView = (c: Customer) => {
-    setSelected(c);
-    const status = getEffectiveStatus(c);
-    if (status === "Pending") setActiveNav("pending");
-    else if (status === "Declined") setActiveNav("declined");
-    else if (status === "Approved" || status === "Signed up") setActiveNav("approved");
+  const handleView = async (c: Customer) => {
+    // Always try to load the freshest record (includes customer diff logs)
+    const fresh = c.accountNumber ? await fetchApplicationByAccount(c.accountNumber) : null;
+    const next = fresh ?? c;
+    setSelected(next);
+    setDetailEditMode(false);
+    const normalized = normalizeStatus(getEffectiveStatus(next));
+    if (normalized === "pending") setActiveNav("pending");
+    else if (normalized === "declined") setActiveNav("declined");
+    else if (normalized === "approved" || normalized === "signed up" || normalized === "signed_up") setActiveNav("approved");
     else setActiveNav("dashboard");
   };
 
@@ -1232,20 +1728,137 @@ export default function AdminDashboardPage() {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200 ease-out hover:scale-105 hover:bg-[#F8843F] active:scale-95 ${
-                theme === "dark" ? "text-slate-300 hover:bg-slate-700" : "text-slate-600 hover:bg-slate-100"
-              }`}
-              aria-label="Notifications"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#F8843F] text-[10px] font-bold text-white">
-                1
-              </span>
-            </button>
+            <div className="relative" ref={notifMenuRef}>
+              <button
+                type="button"
+                onClick={() => setNotifMenuOpen((o) => !o)}
+                className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200 ease-out hover:scale-105 active:scale-95 ${
+                  theme === "dark" ? "text-slate-300 hover:bg-slate-700" : "text-slate-600 hover:bg-slate-100"
+                }`}
+                aria-label="Notifications"
+                aria-expanded={notifMenuOpen}
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#F8843F] px-1 text-[10px] font-bold text-white">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifMenuOpen && (
+                <div
+                  className={`absolute right-0 top-full z-50 mt-2 w-96 max-w-[90vw] overflow-hidden rounded-xl border shadow-lg ${
+                    theme === "dark" ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className={`flex items-center justify-between border-b px-4 py-3 ${theme === "dark" ? "border-slate-700" : "border-slate-100"}`}>
+                    <p className={`text-sm font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-800"}`}>
+                      Notifications
+                    </p>
+                    <div className="flex items-center gap-3">
+                      {notifications.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => markNotificationsUnread(notifications.map((n) => n.id))}
+                          className={`text-xs font-semibold hover:underline ${
+                            theme === "dark" ? "text-slate-300" : "text-slate-500"
+                          }`}
+                        >
+                          Mark all unread
+                        </button>
+                      )}
+                      {unreadCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => markNotificationsRead(notifications.filter((n) => !n.read).map((n) => n.id))}
+                          className={`text-xs font-semibold hover:underline ${
+                            theme === "dark" ? "text-[#FFF19B]" : "text-[#3D45AA]"
+                          }`}
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {notifError && (
+                    <div className={`px-4 py-3 text-sm ${theme === "dark" ? "text-red-200" : "text-red-700"}`}>
+                      {notifError}
+                    </div>
+                  )}
+
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className={`px-4 py-6 text-center text-sm ${theme === "dark" ? "text-slate-300" : "text-slate-500"}`}>
+                        No new notifications.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {notifications.slice(0, 20).map((n) => (
+                            <button
+                              key={n.id}
+                              type="button"
+                              onClick={() => void handleNotificationClick(n)}
+                              className={`w-full px-4 py-3 text-left transition-colors ${
+                                theme === "dark"
+                                  ? n.read
+                                    ? "bg-slate-800 hover:bg-slate-700/60"
+                                    : "bg-slate-800 hover:bg-slate-700/80"
+                                  : n.read
+                                    ? "bg-white hover:bg-slate-50"
+                                    : "bg-white hover:bg-slate-50"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className={`truncate text-sm font-semibold ${
+                                    theme === "dark"
+                                      ? n.read ? "text-slate-300" : "text-slate-100"
+                                      : n.read ? "text-slate-500" : "text-slate-800"
+                                  }`}>
+                                    {n.application?.recordNumber ? `Record #${n.application.recordNumber}` : "Application update"}
+                                  </p>
+                                  <p className={`mt-0.5 line-clamp-2 text-xs ${
+                                    theme === "dark"
+                                      ? n.read ? "text-slate-500" : "text-slate-300"
+                                      : n.read ? "text-slate-400" : "text-slate-600"
+                                  }`}>
+                                    {n.message}
+                                  </p>
+                                  {n.application?.firstName && (
+                                    <p className={`mt-1 text-xs ${
+                                      theme === "dark"
+                                        ? n.read ? "text-slate-500" : "text-slate-400"
+                                        : n.read ? "text-slate-400" : "text-slate-500"
+                                    }`}>
+                                      {n.application.firstName} {n.application.lastName}
+                                    </p>
+                                  )}
+                                </div>
+                                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                  n.type === "PENDING"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : n.type === "APPROVED"
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : n.type === "DECLINED"
+                                        ? "bg-red-100 text-red-700"
+                                        : "bg-slate-100 text-slate-700"
+                                }`}>
+                                  {n.type}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="relative" ref={profileMenuRef}>
               <button
                 type="button"
@@ -1367,16 +1980,16 @@ export default function AdminDashboardPage() {
                   onBack={() => { setSelected(null); setDetailEditMode(false); }}
                   theme={theme}
                   isEditing={detailEditMode}
-                  onEdit={effectiveSelected.status === "Pending" ? () => setDetailEditMode(true) : undefined}
+                  onEdit={normalizeStatus(effectiveSelected.status) === "pending" ? () => setDetailEditMode(true) : undefined}
                   onRequestDone={handleDraftRequest}
                   onCancel={() => setDetailEditMode(false)}
                   onApprove={
-                    effectiveSelected.status === "Pending"
+                    normalizeStatus(effectiveSelected.status) === "pending"
                       ? () => setApproveModalOpen(true)
                       : undefined
                   }
                   onDecline={
-                    effectiveSelected.status === "Pending"
+                    normalizeStatus(effectiveSelected.status) === "pending"
                       ? () => setDeclineModalOpen(true)
                       : undefined
                   }

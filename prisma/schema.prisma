@@ -102,6 +102,7 @@ model Application {
   approvedAt    DateTime?
   declinedAt    DateTime?
   declineReason String?  @db.Text
+
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

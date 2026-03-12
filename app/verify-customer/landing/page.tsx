@@ -16,11 +16,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
  
    const canContinue = useMemo(() => Boolean(account) && verified === "1", [account, verified]);
  
-  type Scope = "name";
   type ApplicationReason = "simple_correction" | "change_owner_purchase" | "change_owner_inheritance";
 
   const [reason, setReason] = useState<ApplicationReason>("simple_correction");
-  const [scope, setScope] = useState<Scope>("name");
   const [ownerName, setOwnerName] = useState("");
 
   const [notifications, setNotifications] = useState<{ id: string; message: string; type: string; createdAt?: string }[]>([]);
@@ -50,12 +48,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
   }, [notificationOpen]);
 
   useEffect(() => {
-    if (!account || verified !== "1") return;
-    fetch(`/api/applications/${encodeURIComponent(account)}/notifications`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((list: { id: string; message: string; type: string; createdAt?: string }[]) => setNotifications(list))
-      .catch(() => {});
-  }, [account, verified]);
+    const fetchNotifications = async () => {
+      if (!account || verified !== "1") return;
+      try {
+        const res = await fetch(`/api/applications/${encodeURIComponent(account)}/notifications`, {
+          cache: "no-store",
+        });
+        const list = res.ok ? await res.json() : [];
+        setNotifications(Array.isArray(list) ? list : []);
+      } catch {
+        // ignore
+      }
+    };
+
+    // Initial load
+    void fetchNotifications();
+
+    // Refresh whenever the dropdown is opened (so approve/decline shows without page refresh)
+    if (notificationOpen) {
+      void fetchNotifications();
+    }
+  }, [account, verified, notificationOpen]);
 
   useEffect(() => {
     if (!account || verified !== "1") return;
@@ -82,8 +95,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
   const continueNext = () => {
     if (!canContinue) return;
+    // After ID verification, customers should be able to edit
+    // applicant, spouse, and contact information in one flow,
+    // so we always use scope=all here.
     router.push(
-      `/verify-customer?account=${encodeURIComponent(account)}&verified=1&mode=edit&scope=${scope}&reason=${reason}`,
+      `/verify-customer?account=${encodeURIComponent(account)}&verified=1&mode=edit&scope=all&reason=${reason}`,
     );
   };
  
@@ -117,7 +133,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
          <div className="mx-auto flex min-h-[60px] w-full max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="w-12" />
           <div className="flex items-center justify-center">
-            <Image src="/logo_aneco.png" alt="ANECO" width={28} height={28} className="object-contain" />
+            <Image
+              src="/logo_aneco.png"
+              alt="ANECO"
+              width={84}
+              height={84}
+              className="object-contain"
+              priority
+            />
           </div>
           <div className="flex items-center gap-2">
             <div className="relative" ref={notificationRef}>
@@ -220,7 +243,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
                   description: "Ownership changed due to inheritance or legal decision.",
                   scope: "name",
                 },
-              ] as { id: ApplicationReason; label: string; description: string; scope: Scope }[]).map((opt) => (
+              ] as { id: ApplicationReason; label: string; description: string }[]).map((opt) => (
                 <label key={opt.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-neutral-200/80 bg-white px-4 py-3 text-sm font-medium text-neutral-900 transition-all hover:bg-neutral-50">
                   <input
                     type="radio"
@@ -229,7 +252,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
                     checked={reason === opt.id}
                     onChange={() => {
                       setReason(opt.id);
-                      setScope(opt.scope);
                     }}
                     className="h-4 w-4 cursor-pointer"
                   />
