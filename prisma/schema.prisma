@@ -92,6 +92,9 @@ model Application {
   cosignatory String?
   witness     String?
   notes       String? @db.Text
+
+  /// Customer-selected category on the consumer portal (landing): simple_correction | change_owner_purchase | change_owner_inheritance
+  customerUpdateReason String? @db.VarChar(191)
   
   // Payment/Receipt Info
   orNumber   String?

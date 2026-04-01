@@ -47,6 +47,7 @@ function convertSnakeToCamel(obj: Record<string, any>): Record<string, any> {
     or_number: "orNumber",
     date_issued: "dateIssued",
     decline_reason: "declineReason",
+    customer_update_reason: "customerUpdateReason",
   };
 
   for (const [key, value] of Object.entries(obj)) {
@@ -210,6 +211,7 @@ export async function PATCH(
       "approvedAt",
       "declinedAt",
       "declineReason",
+      "customerUpdateReason",
     ]);
 
     const filteredData: Record<string, any> = {};
@@ -234,26 +236,47 @@ export async function PATCH(
       updatePayload.updatedById = session.user.id;
     }
 
-    const application = await prisma.application.update({
-      where: { accountNumber },
-      data: updatePayload,
-      include: {
-        createdBy: {
-          select: {
-            id: true,
-            username: true,
-            name: true,
-          },
-        },
-        updatedBy: {
-          select: {
-            id: true,
-            username: true,
-            name: true,
-          },
+    const includeRelations = {
+      createdBy: {
+        select: {
+          id: true,
+          username: true,
+          name: true,
         },
       },
-    });
+      updatedBy: {
+        select: {
+          id: true,
+          username: true,
+          name: true,
+        },
+      },
+    };
+
+    let application;
+    try {
+      application = await prisma.application.update({
+        where: { accountNumber },
+        data: updatePayload,
+        include: includeRelations,
+      });
+    } catch (firstErr) {
+      // DB not migrated yet: column `customerUpdateReason` missing → retry without it so saves still work.
+      const errText = String(firstErr instanceof Error ? firstErr.message : firstErr);
+      const missingReasonColumn =
+        updatePayload.customerUpdateReason !== undefined &&
+        /customerUpdateReason|Unknown column|1054/i.test(errText);
+      if (missingReasonColumn) {
+        const { customerUpdateReason: _drop, ...rest } = updatePayload;
+        application = await prisma.application.update({
+          where: { accountNumber },
+          data: rest,
+          include: includeRelations,
+        });
+      } else {
+        throw firstErr;
+      }
+    }
 
     // Create a single DB notification when admin approves/declines (only once per application)
     const prevStatus = (existing.status ?? "").toString();
@@ -297,6 +320,10 @@ export async function PATCH(
     if ((action === "edit" || !action) && source === "customer") {
       const diff = buildDiff(existing as any, filteredData as any);
       if (Object.keys(diff).length > 0) {
+        const customerUpdateReason =
+          typeof (filteredData as any)?.customerUpdateReason === "string" && (filteredData as any).customerUpdateReason.trim()
+            ? (filteredData as any).customerUpdateReason.trim()
+            : null;
         await prisma.activityLog.create({
           data: {
             action: "APPLICATION_UPDATED",
@@ -306,6 +333,7 @@ export async function PATCH(
               source: "customer",
               recordNumber: application.recordNumber,
               accountNumber: application.accountNumber,
+              customerUpdateReason,
               diff,
             },
           },
