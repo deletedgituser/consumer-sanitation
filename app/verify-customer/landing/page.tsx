@@ -8,11 +8,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
  import { extractOwnerName } from "@/lib/account-verification";
  import { signOut } from "next-auth/react";
  
- export default function VerifyCustomerLandingPage() {
-   const router = useRouter();
-   const search = useSearchParams();
-   const account = search.get("account") ?? "";
-   const verified = search.get("verified") ?? "";
+export default function VerifyCustomerLandingPage() {
+  const router = useRouter();
+  const search = useSearchParams();
+  const account = search.get("account") ?? "";
+  const verified = search.get("verified") ?? "";
+
+  const handleLogout = async () => {
+    await signOut({ redirect: false });
+    router.push("/");
+    router.refresh();
+  };
  
    const canContinue = useMemo(() => Boolean(account) && verified === "1", [account, verified]);
  
@@ -202,7 +208,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
             <button
               type="button"
-              onClick={() => signOut({ callbackUrl: "/" })}
+              onClick={() => void handleLogout()}
               className="inline-flex min-h-[32px] items-center justify-center rounded-lg border border-neutral-200/80 bg-white px-2.5 text-xs font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 sm:min-h-[36px] sm:rounded-xl sm:px-3 sm:text-sm"
             >
               Logout

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
+import { isValidMobileNumber, normalizeMobileNumber } from "@/lib/account-verification";
 
 function buildDiff(
   before: Record<string, any>,
@@ -48,6 +49,7 @@ function convertSnakeToCamel(obj: Record<string, any>): Record<string, any> {
     date_issued: "dateIssued",
     decline_reason: "declineReason",
     customer_update_reason: "customerUpdateReason",
+    contact_number_for_contacting: "contactNumberForContacting",
   };
 
   for (const [key, value] of Object.entries(obj)) {
@@ -194,6 +196,7 @@ export async function PATCH(
       "spouseSuffix",
       "spouseBirthdate",
       "cellphone",
+      "contactNumberForContacting",
       "landline",
       "email",
       "privacyConsent",
@@ -223,6 +226,22 @@ export async function PATCH(
 
     if (action === "edit" || !action) {
       delete filteredData.status;
+    }
+
+    if ((action === "edit" || !action) && source === "customer") {
+      const nextMobileValue =
+        typeof filteredData.contactNumberForContacting === "string"
+          ? filteredData.contactNumberForContacting
+          : "";
+
+      if (!isValidMobileNumber(nextMobileValue)) {
+        return NextResponse.json(
+          { error: "A valid active mobile number is required." },
+          { status: 400 },
+        );
+      }
+
+      filteredData.contactNumberForContacting = normalizeMobileNumber(nextMobileValue);
     }
 
     const updatePayload: any = {
@@ -263,11 +282,15 @@ export async function PATCH(
     } catch (firstErr) {
       // DB not migrated yet: column `customerUpdateReason` missing → retry without it so saves still work.
       const errText = String(firstErr instanceof Error ? firstErr.message : firstErr);
-      const missingReasonColumn =
-        updatePayload.customerUpdateReason !== undefined &&
-        /customerUpdateReason|Unknown column|1054/i.test(errText);
-      if (missingReasonColumn) {
-        const { customerUpdateReason: _drop, ...rest } = updatePayload;
+      const missingOptionalColumn =
+        (updatePayload.customerUpdateReason !== undefined || updatePayload.contactNumberForContacting !== undefined) &&
+        /customerUpdateReason|contactNumberForContacting|Unknown column|1054/i.test(errText);
+      if (missingOptionalColumn) {
+        const {
+          customerUpdateReason: _dropReason,
+          contactNumberForContacting: _dropContactOnly,
+          ...rest
+        } = updatePayload;
         application = await prisma.application.update({
           where: { accountNumber },
           data: rest,

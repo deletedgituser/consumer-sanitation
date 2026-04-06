@@ -76,9 +76,10 @@ model Application {
   spouseBirthdate String?
   
   // Contact Information
-  cellphone String
-  landline  String?
-  email     String?
+  cellphone                   String
+  landline                    String?
+  email                       String?
+  contactNumberForContacting  String?
   
   // Privacy Preferences
   privacyConsent    Boolean @default(false)

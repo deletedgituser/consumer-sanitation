@@ -4,6 +4,10 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function digitsOnly(value: string): string {
+  return value.replace(/\D+/g, "");
+}
+
 function toUpperAlphaNumeric(value: string): string {
   return value
     .toUpperCase()
@@ -15,6 +19,20 @@ function toUpperAlphaNumeric(value: string): string {
 function readString(record: UnknownRecord, key: string): string {
   const value = record[key];
   return typeof value === "string" ? value.trim() : "";
+}
+
+export function normalizeMobileNumber(value: string): string {
+  const digits = digitsOnly(value.trim());
+
+  if (/^09\d{9}$/.test(digits)) return digits;
+  if (/^9\d{9}$/.test(digits)) return `0${digits}`;
+  if (/^639\d{9}$/.test(digits)) return `0${digits.slice(2)}`;
+
+  return digits;
+}
+
+export function isValidMobileNumber(value: string): boolean {
+  return /^09\d{9}$/.test(normalizeMobileNumber(value));
 }
 
 export function extractOwnerName(accountData: unknown): string {
@@ -91,6 +109,10 @@ export function mapApiToForm(apiData: UnknownRecord): Record<string, unknown> {
     spouseBirthdate: readString(apiData, "spouse_birthdate") || "",
     residenceAddress: readString(apiData, "residence_address") || "",
     cellphone: readString(apiData, "cellphone") || "",
+    contactNumberForContacting:
+      readString(apiData, "contact_number_for_contacting") ||
+      readString(apiData, "contactNumberForContacting") ||
+      "",
     landline: readString(apiData, "landline") || "",
     email: readString(apiData, "email") || "",
     cosignatory: readString(apiData, "cosignatory") || "",
@@ -163,7 +185,11 @@ export function mapFormToApi(
   const civilStatus = nonEmptyString(formData.civilStatus);
   if (civilStatus) payload.civil_status = civilStatus;
   const cellphone = nonEmptyString(formData.cellphone);
-  if (cellphone) payload.cellphone = cellphone;
+  if (cellphone) payload.cellphone = normalizeMobileNumber(cellphone);
+  const contactNumberForContacting = nonEmptyString(formData.contactNumberForContacting);
+  if (contactNumberForContacting) {
+    payload.contact_number_for_contacting = normalizeMobileNumber(contactNumberForContacting);
+  }
   const birthdate = nonEmptyString(formData.birthdate);
   if (birthdate) payload.birthdate = birthdate;
 

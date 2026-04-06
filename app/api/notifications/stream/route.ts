@@ -24,19 +24,52 @@ export async function GET(request: NextRequest) {
   let since = sinceParam ? new Date(sinceParam) : new Date(Date.now() - 60_000);
   if (Number.isNaN(since.getTime())) since = new Date(Date.now() - 60_000);
 
+  let cancelStream = () => {};
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
       let closed = false;
+      let cleanedUp = false;
+
+      const cleanup = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        closed = true;
+        clearInterval(heartbeat);
+        request.signal.removeEventListener("abort", handleAbort);
+        try {
+          controller.close();
+        } catch {
+          // ignore double-close/cancel races
+        }
+      };
+      cancelStream = cleanup;
+
+      const safeEnqueue = (payload: string) => {
+        if (closed) return false;
+        try {
+          controller.enqueue(encoder.encode(payload));
+          return true;
+        } catch {
+          cleanup();
+          return false;
+        }
+      };
+
+      const handleAbort = () => {
+        cleanup();
+      };
 
       const heartbeat = setInterval(() => {
-        if (closed) return;
-        controller.enqueue(encoder.encode(`event: ping\ndata: {}\n\n`));
+        void safeEnqueue(`event: ping\ndata: {}\n\n`);
       }, 15_000);
+
+      request.signal.addEventListener("abort", handleAbort);
 
       try {
         // initial hello
-        controller.enqueue(encoder.encode(sseFormat("ready", { since: since.toISOString() })));
+        if (!safeEnqueue(sseFormat("ready", { since: since.toISOString() }))) return;
 
         while (!closed) {
           const notifications = await prisma.notification.findMany({
@@ -61,42 +94,42 @@ export async function GET(request: NextRequest) {
             },
           });
 
+          if (closed || request.signal.aborted) {
+            cleanup();
+            break;
+          }
+
           if (notifications.length > 0) {
             // advance cursor to last item
             const last = notifications[notifications.length - 1];
             since = new Date(last.createdAt);
 
-            controller.enqueue(
-              encoder.encode(
+            if (
+              !safeEnqueue(
                 sseFormat("notification", {
                   notifications,
                   since: since.toISOString(),
                 })
               )
-            );
+            ) {
+              break;
+            }
           }
 
           await sleep(2000);
         }
       } catch (err) {
         if (!closed) {
-          controller.enqueue(
-            encoder.encode(
-              sseFormat("error", { message: err instanceof Error ? err.message : "stream error" })
-            )
+          void safeEnqueue(
+            sseFormat("error", { message: err instanceof Error ? err.message : "stream error" })
           );
         }
       } finally {
-        clearInterval(heartbeat);
-        try {
-          controller.close();
-        } catch {
-          // ignore
-        }
+        cleanup();
       }
     },
     cancel() {
-      // client disconnected
+      cancelStream();
     },
   });
 

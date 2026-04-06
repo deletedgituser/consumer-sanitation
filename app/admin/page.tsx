@@ -31,6 +31,7 @@ type Customer = {
   spouseBirthdate: string;
   residenceAddress: string;
   cellphone: string;
+  contactNumberForContacting: string;
   landline: string;
   email: string;
   privacyConsent: boolean;
@@ -141,6 +142,7 @@ function CustomerDetail({
     spouseBirthdate: "Spouse birthdate",
     residenceAddress: "Residence address",
     cellphone: "Cellphone",
+    contactNumberForContacting: "Contact number (for contacting only)",
     landline: "Landline",
     email: "Email",
     cosignatory: "Co-signatory",
@@ -842,6 +844,7 @@ function ApplicationsTable({
             <th className={thClass}>Account Number</th>
             <th className={thClass}>Record #</th>
             <th className={thClass}>Name</th>
+            <th className={thClass}>Contact Number</th>
             <th className={thClass}>Area</th>
             <th className={thClass}>Barangay</th>
             <th className={thClass}>Status</th>
@@ -863,6 +866,7 @@ function ApplicationsTable({
               <td className={`${theme === "dark" ? "px-4 py-3 font-medium text-white" : "px-4 py-3 font-medium text-slate-800"}`}>
                 {c.firstName} {c.middleName ? c.middleName.charAt(0) + "." : ""} {c.lastName}
               </td>
+              <td className={tdMutedClass}>{c.contactNumberForContacting || "—"}</td>
               <td className={tdMutedClass}>{c.area}</td>
               <td className={tdMutedClass}>{c.barangay}</td>
               <td className="px-4 py-3">
@@ -1006,7 +1010,8 @@ export default function AdminDashboardPage() {
     spouseSuffix: app.spouseSuffix || "",
     spouseBirthdate: app.spouseBirthdate || "",
     residenceAddress: app.residenceAddress,
-    cellphone: app.cellphone,
+    cellphone: app.cellphone || "",
+    contactNumberForContacting: app.contactNumberForContacting || "",
     landline: app.landline || "",
     email: app.email,
     privacyConsent: app.privacyConsent,

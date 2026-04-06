@@ -5,7 +5,12 @@ import Link from "next/link";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
-import { mapApiToForm, mapFormToApi } from "@/lib/account-verification";
+import {
+  isValidMobileNumber,
+  mapApiToForm,
+  mapFormToApi,
+  normalizeMobileNumber,
+} from "@/lib/account-verification";
 
 // initial structure with empty values; real data is fetched from the API
 const initialForm = {
@@ -120,6 +125,8 @@ export default function VerifyCustomerPage() {
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [reviewMobileNumber, setReviewMobileNumber] = useState("");
+  const [reviewMobileTouched, setReviewMobileTouched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [applicationFromDb, setApplicationFromDb] = useState<Record<string, unknown> | null>(null);
@@ -206,6 +213,7 @@ export default function VerifyCustomerPage() {
     "birthdate", "gender", "civilStatus", "spouseFirst", "spouseMiddle", "spouseLast", "spouseSuffix", "spouseBirthdate",
     "residenceAddress", "cellphone", "landline", "email", "cosignatory", "witness", "status", "orNumber", "dateIssued", "notes",
   ] as const;
+  const customerReviewSummaryExcludedFields = new Set(["contactNumberForContacting"]);
   const enumComparableFields = new Set<string>(["gender", "civilStatus", "status"]);
   const comparableValue = (key: string, value: unknown) => {
     const str = String(value ?? "");
@@ -216,6 +224,13 @@ export default function VerifyCustomerPage() {
     if (!canEditField(key as keyof typeof initialForm)) return false;
     return comparableValue(k, form[key]) !== comparableValue(k, initialFormData[key]);
   });
+  const reviewMobileError = useMemo(() => {
+    const trimmed = reviewMobileNumber.trim();
+    if (!trimmed) return "Please enter an active mobile number.";
+    if (!isValidMobileNumber(trimmed)) return "Enter a valid mobile number.";
+    return "";
+  }, [reviewMobileNumber]);
+  const canSubmitReview = !isSubmitting && !reviewMobileError;
 
   const fieldLabels: Record<(typeof formFieldsForCompare)[number], string> = {
     area: "Area",
@@ -250,6 +265,7 @@ export default function VerifyCustomerPage() {
   function buildChangeSummary(): { label: string; before: string; after: string }[] {
     const changedFields: { label: string; before: string; after: string }[] = [];
     formFieldsForCompare.forEach((key) => {
+      if (customerReviewSummaryExcludedFields.has(key as string)) return;
       if (!canEditField(key as keyof typeof initialForm)) return;
       const k = key as string;
       const beforeVal = comparableValue(k, initialFormData[key]);
@@ -282,6 +298,8 @@ export default function VerifyCustomerPage() {
       return;
     }
 
+    setReviewMobileNumber("");
+    setReviewMobileTouched(false);
     setLastChangeSummary(buildChangeSummary());
     setSubmitError(null);
     setShowConfirmation(true);
@@ -305,6 +323,13 @@ export default function VerifyCustomerPage() {
       return;
     }
 
+    const normalizedMobile = normalizeMobileNumber(reviewMobileNumber);
+    if (!isValidMobileNumber(normalizedMobile)) {
+      setReviewMobileTouched(true);
+      toast.error("Please enter a valid active mobile number.");
+      return;
+    }
+
     const originalName = [
       initialFormData.firstName,
       initialFormData.middleName,
@@ -318,7 +343,9 @@ export default function VerifyCustomerPage() {
       setIsSubmitting(true);
       setSubmitError(null);
 
-      const apiPayload = mapFormToApi(form);
+      const apiPayload = mapFormToApi({ ...form, cellphone: normalizedMobile });
+      delete apiPayload.cellphone;
+      apiPayload.contact_number_for_contacting = normalizedMobile;
       const accountNumberForPatch = accountParam || form.accountNumber;
 
       if (!accountNumberForPatch) {
@@ -362,6 +389,8 @@ export default function VerifyCustomerPage() {
       setShowConfirmation(false);
       setShowSuccessModal(true);
       setIsEditing(false);
+      setReviewMobileNumber("");
+      setReviewMobileTouched(false);
 
       const wantsText = updateReasonLabel
         ? `Wants to ${updateReasonLabel}`
@@ -397,6 +426,12 @@ export default function VerifyCustomerPage() {
         const next = digitsOnly(e.target.value);
         return { ...prev, [key]: typeof maxLen === "number" ? next.slice(0, maxLen) : next };
       });
+
+  const updateReviewMobileNumber = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const next = digitsOnly(e.target.value).slice(0, 12);
+    setReviewMobileTouched(true);
+    setReviewMobileNumber(next);
+  };
 
   const updateDateIso = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [key]: formatMonDdYyyyFromInput(e.target.value) }));
@@ -1214,16 +1249,50 @@ export default function VerifyCustomerPage() {
                   onClick={() => {
                     setShowConfirmation(false);
                     setSubmitError(null);
+                    setReviewMobileNumber("");
+                    setReviewMobileTouched(false);
                     setIsEditing(true);
                   }}
                   className="w-full rounded-xl border border-neutral-200/80 bg-white py-3 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-50"
                 >
                   Add more changes
                 </button>
+                <div className="w-full rounded-xl border border-neutral-200/80 bg-white p-4 text-left">
+                  <label className="block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">
+                    Active mobile number
+                  </label>
+                  <p id="review-mobile-help" className="mt-2 text-xs text-neutral-500">
+                    Please enter an active mobile number.
+                  </p>
+                  <input
+                    type="tel"
+                    value={reviewMobileNumber}
+                    onChange={updateReviewMobileNumber}
+                    onBlur={() => setReviewMobileTouched(true)}
+                    placeholder="Enter mobile number"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    maxLength={12}
+                    className={`mt-3 w-full rounded-xl border px-3.5 py-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 ${
+                      reviewMobileTouched && reviewMobileError
+                        ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+                        : "border-neutral-300 focus:border-neutral-900 focus:ring-neutral-300"
+                    }`}
+                    aria-invalid={reviewMobileTouched && Boolean(reviewMobileError)}
+                    aria-describedby="review-mobile-help review-mobile-error"
+                  />
+                  {reviewMobileTouched && reviewMobileError ? (
+                    <p id="review-mobile-error" className="mt-2 text-xs text-red-600">
+                      {reviewMobileError}
+                    </p>
+                  ) : (
+                    <span id="review-mobile-error" className="sr-only" />
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => void handleSubmitApplication()}
-                  disabled={isSubmitting}
+                  disabled={!canSubmitReview}
                   className="w-full rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSubmitting ? "Submitting…" : "Submit changes"}

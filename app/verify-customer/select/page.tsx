@@ -1,15 +1,15 @@
  "use client";
  
- import Image from "next/image";
- import Link from "next/link";
- import { useMemo, useState } from "react";
- import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
  
  type Scope = "name" | "address" | "contact" | "custom";
  
- export default function VerifyCustomerSelectPage() {
-   const router = useRouter();
+export default function VerifyCustomerSelectPage() {
+  const router = useRouter();
    const search = useSearchParams();
    const account = search.get("account") ?? "";
    const verified = search.get("verified") ?? "";
@@ -30,7 +30,7 @@ import { signOut } from "next-auth/react";
  
    const canContinue = useMemo(() => Boolean(account) && verified === "1", [account, verified]);
  
-   const goNext = () => {
+  const goNext = () => {
      if (!canContinue) return;
     if (scope === "custom") {
       const fields = Object.entries(customFields)
@@ -42,6 +42,12 @@ import { signOut } from "next-auth/react";
     }
     router.push(`/verify-customer?account=${encodeURIComponent(account)}&verified=1&mode=edit&scope=${scope}`);
    };
+
+  const handleLogout = async () => {
+    await signOut({ redirect: false });
+    router.push("/");
+    router.refresh();
+  };
  
    if (!account) {
      return (
@@ -80,7 +86,7 @@ import { signOut } from "next-auth/react";
            </div>
           <button
             type="button"
-            onClick={() => signOut({ callbackUrl: "/" })}
+            onClick={() => void handleLogout()}
             className="text-sm font-medium text-red-600 transition-colors hover:text-red-700"
           >
             Logout
