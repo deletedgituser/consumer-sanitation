@@ -1,7 +1,10 @@
 param(
   [string] $OutDir = "certificates",
   [int] $CertDays = 825,
-  [switch] $Trust
+  [switch] $Trust,
+  # Extra IPv4 addresses for SAN (e.g. phone hits https://THIS:3000). Default: auto-detect LAN IPs.
+  [string[]] $ExtraIp = @(),
+  [switch] $NoAutoLanIp
 )
 
 Set-StrictMode -Version Latest
@@ -103,8 +106,19 @@ function Install-TrustedCertCurrentUser([System.Security.Cryptography.X509Certif
   }
 }
 
-Write-Info "Generating a self-signed localhost cert for Next.js dev HTTPS."
-Write-Info "Tip: you can also trust it with -Trust (may prompt)."
+function Get-AutoLanIPv4 {
+  if (-not (Get-Command Get-NetIPAddress -ErrorAction SilentlyContinue)) { return @() }
+  Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.IPAddress -notmatch '^127\.' -and
+      $_.IPAddress -ne '0.0.0.0' -and
+      $_.PrefixOrigin -ne 'WellKnown'
+    } |
+    Select-Object -ExpandProperty IPAddress -Unique
+}
+
+Write-Info "Generating a self-signed dev cert (localhost + LAN IP) for Next.js HTTPS and mobile camera APIs."
+Write-Info "Tip: -Trust trusts the cert on this Windows PC only; phones still must accept the warning or install .cer once."
 
 if (!(Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
 
@@ -142,6 +156,24 @@ $san.AddDnsName("localhost")
 $san.AddIpAddress([System.Net.IPAddress]::Parse("127.0.0.1"))
 $san.AddIpAddress([System.Net.IPAddress]::Parse("::1"))
 $san.AddIpAddress([System.Net.IPAddress]::Parse("0.0.0.0"))
+
+$lanIps = @()
+if (-not $NoAutoLanIp) { $lanIps += @(Get-AutoLanIPv4) }
+foreach ($ip in $ExtraIp) { if ($ip) { $lanIps += $ip } }
+$lanIps = $lanIps | Select-Object -Unique
+foreach ($ip in $lanIps) {
+  try {
+    $san.AddIpAddress([System.Net.IPAddress]::Parse($ip))
+    Write-Info "SAN includes LAN IP: $ip (use https://${ip}:3000 on your phone)"
+  }
+  catch {
+    Write-Info "Skipping invalid -ExtraIp: $ip"
+  }
+}
+if ($lanIps.Count -eq 0) {
+  Write-Info "No LAN IPv4 detected. Pass -ExtraIp 192.168.x.x (your PC address) if the phone uses that URL."
+}
+
 $req.CertificateExtensions.Add($san.Build($true))
 
 $notBefore = [DateTimeOffset]::Now.AddDays(-1)
@@ -173,5 +205,6 @@ if ($Trust) {
   Install-TrustedCertCurrentUser -Cert $certPersisted -FriendlyName $friendlyName
 }
 
-Write-Info "Done. Start Next.js with:"
-Write-Host "  npm run dev:https"
+Write-Info "Done. On this PC: npm run dev:https"
+Write-Info 'On the phone (same Wi-Fi): open https://YOUR_LAN_IP:3000 using an IP printed above; accept the cert warning if asked.'
+Write-Info 'If the camera is still blocked, confirm the address bar shows https not http.'

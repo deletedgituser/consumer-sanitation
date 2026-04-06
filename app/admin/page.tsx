@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { mapFormToApi } from "@/lib/account-verification";
+import { getCustomerApplicationCategoryDisplay } from "@/lib/customer-application-category";
 
 type Customer = {
   id: string;
@@ -45,6 +46,8 @@ type Customer = {
   dateIssued: string;
   notes: string;
   accountNumber: string;
+  /** Customer portal (landing): simple_correction | change_owner_purchase | change_owner_inheritance */
+  customerUpdateReason?: string | null;
   pendingDiff?: Record<string, { before: string; after: string }> | null;
 };
 
@@ -86,11 +89,15 @@ function CustomerDetail({
 }) {
   const isDark = theme === "dark";
   const isPending = normalizeStatus(customer.status) === "pending";
-  const updateType = useMemo(() => {
+  const applicationCategory = useMemo(() => {
+    const fromDb = getCustomerApplicationCategoryDisplay(customer.customerUpdateReason ?? undefined);
+    if (fromDb) return fromDb;
     const notes = (customer.notes ?? "").toString();
     const match = notes.match(/^\s*Update type\s*:\s*(.+)\s*$/im);
-    return match?.[1]?.trim() || "";
-  }, [customer.notes]);
+    const legacy = match?.[1]?.trim();
+    if (legacy) return { title: legacy, subtitle: "" };
+    return null;
+  }, [customer.customerUpdateReason, customer.notes]);
   const textPrimary = isDark ? "text-white" : "text-slate-800";
   const textMuted = isDark ? "text-slate-300" : "text-slate-500";
   const boxClass = isDark
@@ -210,14 +217,14 @@ function CustomerDetail({
           Back to list
         </button>
         <div className="flex flex-wrap items-center gap-3">
-          {updateType && (
+          {applicationCategory && (
             <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              className={`max-w-[min(100%,14rem)] truncate rounded-full px-3 py-1 text-xs font-semibold ${
                 isDark ? "bg-slate-700 text-slate-100" : "bg-slate-100 text-slate-700"
               }`}
-              title="Selected update type (from customer)"
+              title={applicationCategory.subtitle ? `${applicationCategory.title} — ${applicationCategory.subtitle}` : applicationCategory.title}
             >
-              {updateType}
+              {applicationCategory.title}
             </span>
           )}
           <span className={`text-sm ${isDark ? "text-[#FFF19B]" : textMuted}`}>Record #{customer.recordNumber}</span>
@@ -271,6 +278,17 @@ function CustomerDetail({
             </p>
           )}
         </div>
+        {applicationCategory && (
+          <div className="mt-3">
+            <div className={sectionHeaderClass}>Application category (customer)</div>
+            <div className={boxClass}>
+              <p className={`${textPrimary} font-medium`}>{applicationCategory.title}</p>
+              {applicationCategory.subtitle ? (
+                <p className={`mt-1.5 text-sm ${textMuted}`}>{applicationCategory.subtitle}</p>
+              ) : null}
+            </div>
+          </div>
+        )}
         <div className={`mt-3 ${sectionHeaderClass}`}>Membership Type</div>
         <div className={boxClass}>
           {isEditing ? (
@@ -1013,6 +1031,17 @@ export default function AdminDashboardPage() {
     dateIssued: app.dateIssued,
     notes: app.notes || "",
     accountNumber: app.accountNumber || "",
+    customerUpdateReason: (() => {
+      if (app.customerUpdateReason != null) return app.customerUpdateReason;
+      const logs = Array.isArray(app.activityLogs) ? app.activityLogs : [];
+      const customerLog = logs.find((l: any) => {
+        const md = l?.metadata;
+        if (!md?.diff) return false;
+        if (md?.source === "customer") return true;
+        return !l?.userId;
+      });
+      return customerLog?.metadata?.customerUpdateReason ?? null;
+    })(),
     pendingDiff: (() => {
       const logs = Array.isArray(app.activityLogs) ? app.activityLogs : [];
       const customerLog = logs.find((l: any) => {

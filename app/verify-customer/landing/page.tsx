@@ -1,4 +1,4 @@
- "use client";
+"use client";
  
  import Image from "next/image";
  import Link from "next/link";
@@ -129,39 +129,41 @@ import { useEffect, useMemo, useRef, useState } from "react";
  
    return (
      <div className="relative flex min-h-screen min-h-[100dvh] flex-col bg-[#f5f4f0]">
-       <header className="sticky top-0 z-30 border-b border-neutral-200/80 bg-[#faf9f6]/80 backdrop-blur-md">
-         <div className="mx-auto flex min-h-[60px] w-full max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="w-12" />
-          <div className="flex items-center justify-center">
+       <header className="sticky top-0 z-30 border-b border-neutral-200/80 bg-[#faf9f6]/80 backdrop-blur-md supports-[padding:env(safe-area-inset-top)]:pt-[env(safe-area-inset-top)]">
+         <div className="mx-auto flex min-h-[48px] w-full max-w-3xl items-center justify-between gap-2 px-3 py-2 sm:min-h-[52px] sm:gap-3 sm:px-6 sm:py-2.5">
+          <div className="min-w-0 flex-1">
             <Image
               src="/logo_aneco.png"
               alt="ANECO"
-              width={84}
-              height={84}
-              className="object-contain"
+              width={160}
+              height={160}
+              className="h-9 w-auto max-h-9 object-contain object-left sm:h-10 sm:max-h-10 md:h-11 md:max-h-11"
+              sizes="(max-width: 640px) 120px, 160px"
               priority
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <div className="relative" ref={notificationRef}>
               <button
                 type="button"
                 onClick={() => setNotificationOpen((o) => !o)}
-                className="relative flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200/80 bg-white text-neutral-700 shadow-sm transition-colors hover:bg-neutral-50 hover:text-neutral-900"
+                className="relative flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200/80 bg-white text-neutral-600 shadow-sm transition-colors hover:bg-neutral-50 hover:text-neutral-900 sm:h-9 sm:w-9"
                 aria-label="Notifications"
                 aria-expanded={notificationOpen}
               >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
                 {notifications.length > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-neutral-900 px-1 text-[10px] font-medium text-white">
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900 px-0.5 text-[9px] font-semibold leading-none text-white sm:h-4 sm:min-w-4 sm:text-[10px]">
                     {notifications.length > 9 ? "9+" : notifications.length}
                   </span>
                 )}
               </button>
               {notificationOpen && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-neutral-200/80 bg-[#faf9f6] shadow-lg">
+                <div
+                  className="fixed inset-x-3 top-[calc(3.5rem+env(safe-area-inset-top,0px))] z-50 max-h-[min(24rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl border border-neutral-200/80 bg-[#faf9f6] shadow-lg sm:absolute sm:inset-x-auto sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-72 sm:w-80"
+                >
                   <div className="flex items-center justify-between gap-3 border-b border-neutral-200/80 px-4 py-3">
                     <h3 className="text-sm font-semibold text-neutral-900">Notifications</h3>
                     <button
@@ -201,7 +203,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: "/" })}
-              className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-neutral-200/80 bg-white px-3 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50"
+              className="inline-flex min-h-[32px] items-center justify-center rounded-lg border border-neutral-200/80 bg-white px-2.5 text-xs font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 sm:min-h-[36px] sm:rounded-xl sm:px-3 sm:text-sm"
             >
               Logout
             </button>

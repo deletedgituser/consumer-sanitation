@@ -9,7 +9,7 @@
 -- AlterTable
 ALTER TABLE `user` ADD COLUMN `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     ADD COLUMN `role` ENUM('ADMIN', 'STAFF', 'VIEWER') NOT NULL DEFAULT 'ADMIN',
-    ADD COLUMN `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    ADD COLUMN `updatedAt` DATETIME(3) NOT NULL,
     MODIFY `username` VARCHAR(191) NOT NULL,
     MODIFY `password` VARCHAR(191) NOT NULL;
 
@@ -59,10 +59,8 @@ CREATE TABLE `Application` (
     `updatedAt` DATETIME(3) NOT NULL,
     `createdById` VARCHAR(191) NULL,
     `updatedById` VARCHAR(191) NULL,
-    `accountNumber` VARCHAR(191) NOT NULL,
 
     UNIQUE INDEX `Application_recordNumber_key`(`recordNumber`),
-    UNIQUE INDEX `Application_accountNumber_key`(`accountNumber`),
     INDEX `Application_recordNumber_idx`(`recordNumber`),
     INDEX `Application_status_idx`(`status`),
     INDEX `Application_appType_idx`(`appType`),

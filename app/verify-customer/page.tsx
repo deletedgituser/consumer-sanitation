@@ -112,8 +112,8 @@ export default function VerifyCustomerPage() {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastChangeSummary, setLastChangeSummary] = useState<{ label: string; before: string; after: string }[]>([]);
   const [form, setForm] = useState(initialForm);
   const [initialFormData, setInitialFormData] = useState(initialForm);
@@ -149,17 +149,6 @@ export default function VerifyCustomerPage() {
     if (reasonParam === "change_owner_inheritance") return "Change owner – inheritance / legal transfer";
     return "";
   }, [reasonParam]);
-
-  const withUpdateReasonInNotes = useCallback(
-    (notes: unknown) => {
-      const base = typeof notes === "string" ? notes : "";
-      if (!updateReasonLabel) return base;
-      if (/^\\s*Update type\\s*:/im.test(base)) return base;
-      const suffix = `Update type: ${updateReasonLabel}`;
-      return base.trim() ? `${base.trim()}\n${suffix}` : suffix;
-    },
-    [updateReasonLabel]
-  );
 
   useEffect(() => {
     // If user came from the selection page with mode=edit, start in edit mode.
@@ -258,27 +247,7 @@ export default function VerifyCustomerPage() {
 
   // No notifications or logout shown on edit page (per UX).
 
-  const handleSubmitApplication = async () => {
-    if (!hasFormChanges) {
-      setShowSubmitConfirm(false);
-      toast("No changes to save");
-      return;
-    }
-
-    const didChange = (key: keyof typeof initialForm) => {
-      const k = key as unknown as string;
-      return comparableValue(k, form[key]) !== comparableValue(k, initialFormData[key]);
-    };
-
-    // Lightweight client validation for edited fields
-    const email = String(form.email ?? "").trim();
-    if (canEditField("email") && didChange("email") && email && !email.includes("@")) {
-      setShowSubmitConfirm(false);
-      toast.error("Please enter a valid email address (must include @).");
-      return;
-    }
-    // Birthdates are calendar-only (no manual format validation needed)
-
+  function buildChangeSummary(): { label: string; before: string; after: string }[] {
     const changedFields: { label: string; before: string; after: string }[] = [];
     formFieldsForCompare.forEach((key) => {
       if (!canEditField(key as keyof typeof initialForm)) return;
@@ -293,6 +262,57 @@ export default function VerifyCustomerPage() {
         });
       }
     });
+    return changedFields;
+  }
+
+  const openReviewChangesModal = () => {
+    if (!hasFormChanges) {
+      toast("No changes to save");
+      return;
+    }
+
+    const didChange = (key: keyof typeof initialForm) => {
+      const k = key as unknown as string;
+      return comparableValue(k, form[key]) !== comparableValue(k, initialFormData[key]);
+    };
+
+    const email = String(form.email ?? "").trim();
+    if (canEditField("email") && didChange("email") && email && !email.includes("@")) {
+      toast.error("Please enter a valid email address (must include @).");
+      return;
+    }
+
+    setLastChangeSummary(buildChangeSummary());
+    setSubmitError(null);
+    setShowConfirmation(true);
+  };
+
+  const handleSubmitApplication = async () => {
+    if (!hasFormChanges) {
+      setShowConfirmation(false);
+      toast("No changes to save");
+      return;
+    }
+
+    const didChange = (key: keyof typeof initialForm) => {
+      const k = key as unknown as string;
+      return comparableValue(k, form[key]) !== comparableValue(k, initialFormData[key]);
+    };
+
+    const email = String(form.email ?? "").trim();
+    if (canEditField("email") && didChange("email") && email && !email.includes("@")) {
+      toast.error("Please enter a valid email address (must include @).");
+      return;
+    }
+
+    const originalName = [
+      initialFormData.firstName,
+      initialFormData.middleName,
+      initialFormData.lastName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
 
     try {
       setIsSubmitting(true);
@@ -305,13 +325,20 @@ export default function VerifyCustomerPage() {
         throw new Error("No account number available for update.");
       }
 
-      // Submit to local backend API - unauthenticated edit submission
+      const reasonKeys = new Set(["simple_correction", "change_owner_purchase", "change_owner_inheritance"]);
+      const customerReason = reasonKeys.has(reasonParam) ? reasonParam : undefined;
+
       const response = await fetch(
         `/api/applications/${encodeURIComponent(accountNumberForPatch)}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "edit", source: "customer", ...apiPayload }),
+          body: JSON.stringify({
+            action: "edit",
+            source: "customer",
+            ...apiPayload,
+            ...(customerReason !== undefined ? { customer_update_reason: customerReason } : {}),
+          }),
         },
       );
 
@@ -332,19 +359,9 @@ export default function VerifyCustomerPage() {
       setForm(merged);
       setInitialFormData(merged);
 
-      setShowSubmitConfirm(false);
-      setShowConfirmation(true);
-      setLastChangeSummary(changedFields);
+      setShowConfirmation(false);
+      setShowSuccessModal(true);
       setIsEditing(false);
-
-      const originalName = [
-        initialFormData.firstName,
-        initialFormData.middleName,
-        initialFormData.lastName,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
 
       const wantsText = updateReasonLabel
         ? `Wants to ${updateReasonLabel}`
@@ -441,10 +458,11 @@ export default function VerifyCustomerPage() {
         // Map and normalize form data from external API (default for new/rejected)
         const mappedData = mapApiToForm(data);
         const normalizedData = normalizeDateFields(normalizeFormData(mappedData));
-        const defaultData = { ...normalizedData, accountNumber: accountParam } as typeof initialForm;
+        const defaultData = { ...normalizedData, accountNumber: accountParam, notes: "" } as typeof initialForm;
         setDefaultFormFromApi(defaultData);
-        setForm((prev) => ({ ...prev, ...normalizedData, accountNumber: accountParam }));
-        setInitialFormData((prev) => ({ ...prev, ...normalizedData, accountNumber: accountParam }));
+        // Customer portal: never pre-fill Notes with API/seed/admin text (e.g. "Update type:…", corporate boilerplate).
+        setForm((prev) => ({ ...prev, ...normalizedData, accountNumber: accountParam, notes: "" }));
+        setInitialFormData((prev) => ({ ...prev, ...normalizedData, accountNumber: accountParam, notes: "" }));
 
         // Ensure application record exists; new applications get PENDING. Then load from sanitation_db by status.
         try {
@@ -455,7 +473,7 @@ export default function VerifyCustomerPage() {
               accountNumber: accountParam,
               recordNumber: data.record_number || `REC-${Date.now()}`,
               ...mappedData,
-              notes: withUpdateReasonInNotes((mappedData as any)?.notes),
+              notes: "",
             }),
           });
           if (postRes.ok) {
@@ -464,12 +482,12 @@ export default function VerifyCustomerPage() {
             const status = (app.status ?? "").toString().toUpperCase();
 
             if (status === "DECLINED" || status === "REJECTED") {
-              setForm({ ...defaultData, status: "DECLINED" });
-              setInitialFormData({ ...defaultData, status: "DECLINED" });
+              setForm({ ...defaultData, status: "DECLINED", notes: "" });
+              setInitialFormData({ ...defaultData, status: "DECLINED", notes: "" });
             } else {
               const fromDb = normalizeDateFields({ ...app, accountNumber: accountParam } as Partial<typeof initialForm>);
-              setForm((prev) => ({ ...prev, ...fromDb }));
-              setInitialFormData((prev) => ({ ...prev, ...fromDb }));
+              setForm((prev) => ({ ...prev, ...fromDb, notes: "" }));
+              setInitialFormData((prev) => ({ ...prev, ...fromDb, notes: "" }));
             }
           }
         } catch {
@@ -494,7 +512,7 @@ export default function VerifyCustomerPage() {
       ? "w-full rounded-xl border border-neutral-200/80 bg-white px-3.5 py-3 text-sm text-neutral-900 cursor-default read-only:outline-none"
       : "w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300";
 
-  const hasBlockingModal = showSubmitConfirm || showConfirmation || showDiscardConfirm;
+  const hasBlockingModal = showConfirmation || showDiscardConfirm || showSuccessModal;
 
   return (
     <div className={`relative flex min-h-screen min-h-[100dvh] flex-col bg-[#f5f4f0] ${hasBlockingModal ? "overflow-hidden" : ""}`}>
@@ -528,31 +546,29 @@ export default function VerifyCustomerPage() {
           animation: app-modal-pop 0.25s ease-out;
         }
       `}</style>
-      {/* Header - modern top bar */}
+      {/* Header: logo left (match landing size), title true center, menu right */}
       <header className="sticky top-0 z-30 border-b border-neutral-200/80 bg-[#faf9f6]/80 backdrop-blur-md">
-        <div className="mx-auto flex min-h-[60px] w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center">
-              <Image
-                src="/logo_aneco.png"
-                alt="ANECO"
-                width={28}
-                height={28}
-                className="object-contain"
-              />
-            </div>
-            <div className="min-w-0">
-              <h1
-                className="truncate text-xs font-semibold tracking-[0.18em] text-neutral-900 sm:text-sm"
-                style={{ letterSpacing: "-0.02em" }}
-              >
-                APPLICATION DETAILS
-              </h1>
-            </div>
+        <div className="relative mx-auto flex min-h-[52px] w-full max-w-6xl items-center px-3 py-2 sm:min-h-[60px] sm:px-6 sm:py-3">
+          <div className="flex min-w-0 flex-1 items-center justify-start">
+            <Image
+              src="/logo_aneco.png"
+              alt="ANECO"
+              width={160}
+              height={160}
+              className="h-9 w-auto max-h-9 object-contain object-left sm:h-10 sm:max-h-10 md:h-11 md:max-h-11"
+              sizes="(max-width: 640px) 120px, 160px"
+              priority
+            />
           </div>
 
-          <div className="hidden md:block" />
+          <h1
+            className="pointer-events-none absolute left-1/2 top-1/2 z-10 max-w-[min(200px,calc(100%-5.5rem))] -translate-x-1/2 -translate-y-1/2 text-center text-[10px] font-semibold uppercase leading-tight tracking-[0.14em] text-neutral-900 sm:max-w-[min(240px,calc(100%-6.5rem))] sm:text-xs sm:tracking-[0.18em] md:text-sm"
+            style={{ letterSpacing: "0.14em" }}
+          >
+            APPLICATION DETAILS
+          </h1>
 
+          <div className="relative z-20 flex min-w-0 flex-1 items-center justify-end">
           {/* Mobile menu */}
           <div className="relative w-12 shrink-0 md:hidden">
             <button
@@ -604,6 +620,9 @@ export default function VerifyCustomerPage() {
               </>
             )}
           </div>
+          {/* Balance width on md+ where hamburger is hidden */}
+          <div className="hidden h-10 w-12 shrink-0 md:block" aria-hidden />
+          </div>
         </div>
       </header>
       {/* Main - centered minimal card */}
@@ -631,7 +650,7 @@ export default function VerifyCustomerPage() {
             className="space-y-5"
             onSubmit={(e) => {
               e.preventDefault();
-              setShowSubmitConfirm(true);
+              openReviewChangesModal();
             }}
           >
             {/* Summary – Account only; status is shown via notification */}
@@ -1090,7 +1109,7 @@ export default function VerifyCustomerPage() {
               form="verify-form"
               className="flex-1 rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-neutral-800 active:scale-[0.97] sm:py-3.5"
             >
-              Save changes
+              Review changes
             </button>
             <button
               type="button"
@@ -1138,76 +1157,44 @@ export default function VerifyCustomerPage() {
         </div>
       )}
 
-      {/* "Do you want to proceed?" confirmation */}
-      {showSubmitConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="app-modal-card w-full max-w-sm rounded-2xl border border-neutral-200/80 bg-[#faf9f6] p-6 shadow-xl sm:p-8">
-            <p className="text-center text-sm font-medium text-neutral-900 sm:text-base">
-              Do you want to proceed with submitting your information?
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                onClick={() => setShowSubmitConfirm(false)}
-                className="w-full rounded-xl border border-neutral-200/80 bg-white py-3 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitApplication}
-                disabled={isSubmitting}
-                className="w-full rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSubmitting ? "Submitting..." : "Proceed"}
-              </button>
-            </div>
-            {submitError && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
-                <p className="text-sm font-medium text-red-700">{submitError}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Submission confirmation / summary modal */}
+      {/* Review changes (before API submit) */}
       {showConfirmation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="app-modal-card flex w-full max-w-sm max-h-[85vh] flex-col rounded-2xl border border-neutral-200/80 bg-[#faf9f6] p-6 shadow-xl sm:p-8">
             <div className="flex flex-1 flex-col items-center text-center min-h-0">
-              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100">
                 <svg
-                  className="h-6 w-6 text-emerald-600"
+                  className="h-6 w-6 text-neutral-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
+                  aria-hidden="true"
                 >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M5 13l4 4L19 7"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                   />
                 </svg>
               </div>
               <h3 className="text-base font-medium text-neutral-900">Review your changes</h3>
               <p className="mt-3 text-sm leading-relaxed text-neutral-600">
-                Your updates have been submitted. Please review the summary below.
+                Please review the summary below. Your updates are not saved until you tap Submit changes.
               </p>
               {lastChangeSummary.length > 0 ? (
                 <div className="mt-4 w-full flex-1 min-h-0 overflow-y-auto space-y-2 text-left text-sm text-neutral-700 pr-1">
                   {lastChangeSummary.map((item) => (
                     <div key={item.label} className="rounded-xl border border-neutral-200/80 bg-white px-3.5 py-2.5">
                       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-neutral-500">{item.label}</p>
-                      <div className="mt-1 flex flex-col gap-1 text-xs sm:flex-row sm:gap-4">
-                        <div className="sm:w-1/2">
-                          <p className="text-[11px] font-medium text-neutral-500">Before</p>
-                          <p className="truncate text-neutral-800">{item.before}</p>
+                      <div className="mt-2 flex flex-col gap-2 text-xs sm:flex-row sm:gap-3">
+                        <div className="min-w-0 flex-1 rounded-lg border border-neutral-200/90 bg-white px-2.5 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-neutral-500">Before</p>
+                          <p className="mt-1 truncate font-medium text-neutral-800">{item.before}</p>
                         </div>
-                        <div className="sm:w-1/2">
-                          <p className="text-[11px] font-medium text-neutral-500">After</p>
-                          <p className="truncate text-neutral-800">{item.after}</p>
+                        <div className="min-w-0 flex-1 rounded-lg border border-emerald-200/80 bg-emerald-50/90 px-2.5 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-emerald-800">After</p>
+                          <p className="mt-1 truncate font-semibold text-emerald-950">{item.after}</p>
                         </div>
                       </div>
                     </div>
@@ -1216,11 +1203,17 @@ export default function VerifyCustomerPage() {
               ) : (
                 <p className="mt-4 text-sm text-neutral-500">No visible field changes were detected.</p>
               )}
-              <div className="mt-6 flex w-full flex-col gap-3 sm:flex-row">
+              {submitError && (
+                <div className="mt-4 w-full rounded-lg border border-neutral-200/90 bg-white p-3 text-left shadow-sm">
+                  <p className="text-sm text-neutral-800">Could not save your changes. Please try again.</p>
+                </div>
+              )}
+              <div className="mt-6 flex w-full flex-col gap-3">
                 <button
                   type="button"
                   onClick={() => {
                     setShowConfirmation(false);
+                    setSubmitError(null);
                     setIsEditing(true);
                   }}
                   className="w-full rounded-xl border border-neutral-200/80 bg-white py-3 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-50"
@@ -1229,15 +1222,42 @@ export default function VerifyCustomerPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowConfirmation(false);
-                    router.push(`/verify-customer/landing?account=${encodeURIComponent(accountParam || "")}&verified=1`);
-                  }}
-                  className="w-full rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+                  onClick={() => void handleSubmitApplication()}
+                  disabled={isSubmitting}
+                  className="w-full rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Done reviewing
+                  {isSubmitting ? "Submitting…" : "Submit changes"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* After successful PATCH */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="app-modal-card w-full max-w-sm rounded-2xl border border-neutral-200/80 bg-[#faf9f6] p-6 shadow-xl sm:p-8">
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+                <svg className="h-6 w-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-base font-medium text-neutral-900">Submitted successfully</h3>
+              <p className="mt-3 text-sm leading-relaxed text-neutral-600">
+                Your information has been submitted. You can return to your account home when you are ready.
+              </p>
+              <button
+                type="button"
+                className="mt-8 w-full rounded-xl bg-neutral-900 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  router.push(`/verify-customer/landing?account=${encodeURIComponent(accountParam || "")}&verified=1`);
+                }}
+              >
+                Continue
+              </button>
             </div>
           </div>
         </div>
