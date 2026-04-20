@@ -335,7 +335,7 @@ function CustomerDetail({
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Area</p>
               {isEditing ? (
-                <input value={display.area} onChange={(e) => setDisplay((d) => ({ ...d, area: e.target.value }))} className={inputClass} />
+                <input value={display.area ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, area: e.target.value }))} className={inputClass} />
               ) : (
                 <p className={textPrimary}>{customer.area}</p>
               )}
@@ -343,7 +343,7 @@ function CustomerDetail({
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>District</p>
               {isEditing ? (
-                <input value={display.district} onChange={(e) => setDisplay((d) => ({ ...d, district: e.target.value }))} className={inputClass} />
+                <input value={display.district ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, district: e.target.value }))} className={inputClass} />
               ) : (
                 <p className={textPrimary}>{customer.district}</p>
               )}
@@ -351,7 +351,7 @@ function CustomerDetail({
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Barangay</p>
               {isEditing ? (
-                <input value={display.barangay} onChange={(e) => setDisplay((d) => ({ ...d, barangay: e.target.value }))} className={inputClass} />
+                <input value={display.barangay ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, barangay: e.target.value }))} className={inputClass} />
               ) : (
                 <p className={textPrimary}>{customer.barangay}</p>
               )}
@@ -379,23 +379,23 @@ function CustomerDetail({
             <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>First Name</p>
-                {isEditing ? <input value={display.firstName} onChange={(e) => setDisplay((d) => ({ ...d, firstName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("firstName", customer.firstName)}</p>}
+                {isEditing ? <input value={display.firstName ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, firstName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("firstName", customer.firstName)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Middle Name</p>
-                {isEditing ? <input value={display.middleName} onChange={(e) => setDisplay((d) => ({ ...d, middleName: e.target.value }))} className={inputClass} disabled={display.noMiddleName} /> : <p className={textPrimary}>{customer.noMiddleName ? "—" : originalValue("middleName", customer.middleName)}</p>}
+                {isEditing ? <input value={display.middleName ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, middleName: e.target.value }))} className={inputClass} disabled={display.noMiddleName} /> : <p className={textPrimary}>{customer.noMiddleName ? "—" : originalValue("middleName", customer.middleName)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Last Name</p>
-                {isEditing ? <input value={display.lastName} onChange={(e) => setDisplay((d) => ({ ...d, lastName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("lastName", customer.lastName)}</p>}
+                {isEditing ? <input value={display.lastName ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, lastName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("lastName", customer.lastName)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Suffix Name</p>
-                {isEditing ? <input value={display.suffixName} onChange={(e) => setDisplay((d) => ({ ...d, suffixName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("suffixName", customer.suffixName)}</p>}
+                {isEditing ? <input value={display.suffixName ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, suffixName: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("suffixName", customer.suffixName)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Birthdate</p>
-                {isEditing ? <input value={display.birthdate} onChange={(e) => setDisplay((d) => ({ ...d, birthdate: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("birthdate", customer.birthdate)}</p>}
+                {isEditing ? <input value={display.birthdate ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, birthdate: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("birthdate", customer.birthdate)}</p>}
               </div>
               <div className="flex items-end">
                 {isEditing ? (
@@ -410,7 +410,7 @@ function CustomerDetail({
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Gender</p>
                 {isEditing ? (
-                  <select value={display.gender} onChange={(e) => setDisplay((d) => ({ ...d, gender: e.target.value as "male" | "female" }))} className={inputClass}>
+                  <select value={display.gender ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, gender: e.target.value as "male" | "female" }))} className={inputClass}>
                     <option value="male">Male</option>
                     <option value="female">Female</option>
                   </select>
@@ -420,7 +420,7 @@ function CustomerDetail({
               </div>
               <div className="sm:col-span-2">
                 <p className={`text-xs font-medium ${textMuted}`}>Civil Status</p>
-                {isEditing ? <input value={display.civilStatus} onChange={(e) => setDisplay((d) => ({ ...d, civilStatus: e.target.value }))} className={inputClass} /> : <p className={`capitalize ${textPrimary}`}>{originalValue("civilStatus", customer.civilStatus)}</p>}
+                {isEditing ? <input value={display.civilStatus ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, civilStatus: e.target.value }))} className={inputClass} /> : <p className={`capitalize ${textPrimary}`}>{originalValue("civilStatus", customer.civilStatus)}</p>}
               </div>
             </div>
             <div className="flex shrink-0 justify-center sm:justify-end">
@@ -498,23 +498,23 @@ function CustomerDetail({
             <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>First Name</p>
-                {isEditing ? <input value={display.spouseFirst} onChange={(e) => setDisplay((d) => ({ ...d, spouseFirst: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseFirst", customer.spouseFirst)}</p>}
+                {isEditing ? <input value={display.spouseFirst ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, spouseFirst: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseFirst", customer.spouseFirst)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Middle Name</p>
-                {isEditing ? <input value={display.spouseMiddle} onChange={(e) => setDisplay((d) => ({ ...d, spouseMiddle: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseMiddle", customer.spouseMiddle)}</p>}
+                {isEditing ? <input value={display.spouseMiddle ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, spouseMiddle: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseMiddle", customer.spouseMiddle)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Last Name</p>
-                {isEditing ? <input value={display.spouseLast} onChange={(e) => setDisplay((d) => ({ ...d, spouseLast: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseLast", customer.spouseLast)}</p>}
+                {isEditing ? <input value={display.spouseLast ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, spouseLast: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseLast", customer.spouseLast)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Suffix Name</p>
-                {isEditing ? <input value={display.spouseSuffix} onChange={(e) => setDisplay((d) => ({ ...d, spouseSuffix: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseSuffix", customer.spouseSuffix)}</p>}
+                {isEditing ? <input value={display.spouseSuffix ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, spouseSuffix: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseSuffix", customer.spouseSuffix)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Birthdate</p>
-                {isEditing ? <input value={display.spouseBirthdate} onChange={(e) => setDisplay((d) => ({ ...d, spouseBirthdate: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseBirthdate", customer.spouseBirthdate)}</p>}
+                {isEditing ? <input value={display.spouseBirthdate ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, spouseBirthdate: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("spouseBirthdate", customer.spouseBirthdate)}</p>}
               </div>
             </div>
             <div className="flex shrink-0 justify-center sm:justify-end">
@@ -577,20 +577,20 @@ function CustomerDetail({
         <div className={`${boxClass} space-y-3`}>
           <div>
             <p className={`text-xs font-medium ${textMuted}`}>Residence Address</p>
-            {isEditing ? <input value={display.residenceAddress} onChange={(e) => setDisplay((d) => ({ ...d, residenceAddress: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("residenceAddress", customer.residenceAddress)}</p>}
+            {isEditing ? <input value={display.residenceAddress ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, residenceAddress: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("residenceAddress", customer.residenceAddress)}</p>}
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Cellphone No.</p>
-              {isEditing ? <input value={display.cellphone} onChange={(e) => setDisplay((d) => ({ ...d, cellphone: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("cellphone", customer.cellphone)}</p>}
+              {isEditing ? <input value={display.cellphone ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, cellphone: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("cellphone", customer.cellphone)}</p>}
             </div>
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Landline No.</p>
-              {isEditing ? <input value={display.landline} onChange={(e) => setDisplay((d) => ({ ...d, landline: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("landline", customer.landline)}</p>}
+              {isEditing ? <input value={display.landline ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, landline: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("landline", customer.landline)}</p>}
             </div>
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>E-mail Address</p>
-              {isEditing ? <input value={display.email} onChange={(e) => setDisplay((d) => ({ ...d, email: e.target.value }))} className={inputClass} type="email" /> : <p className={textPrimary}>{originalValue("email", customer.email)}</p>}
+              {isEditing ? <input value={display.email ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, email: e.target.value }))} className={inputClass} type="email" /> : <p className={textPrimary}>{originalValue("email", customer.email)}</p>}
             </div>
           </div>
         </div>
@@ -686,25 +686,25 @@ function CustomerDetail({
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Co-signatory</p>
-              {isEditing ? <input value={display.cosignatory} onChange={(e) => setDisplay((d) => ({ ...d, cosignatory: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("cosignatory", customer.cosignatory)}</p>}
+              {isEditing ? <input value={display.cosignatory ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, cosignatory: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("cosignatory", customer.cosignatory)}</p>}
             </div>
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Witness</p>
-              {isEditing ? <input value={display.witness} onChange={(e) => setDisplay((d) => ({ ...d, witness: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("witness", customer.witness)}</p>}
+              {isEditing ? <input value={display.witness ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, witness: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{originalValue("witness", customer.witness)}</p>}
             </div>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Contract Status</p>
-              {isEditing ? <input value={display.status} onChange={(e) => setDisplay((d) => ({ ...d, status: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.status}</p>}
+              {isEditing ? <input value={display.status ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, status: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.status}</p>}
             </div>
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>OR Number</p>
-              {isEditing ? <input value={display.orNumber} onChange={(e) => setDisplay((d) => ({ ...d, orNumber: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.orNumber}</p>}
+              {isEditing ? <input value={display.orNumber ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, orNumber: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.orNumber}</p>}
             </div>
             <div>
               <p className={`text-xs font-medium ${textMuted}`}>Date Issued</p>
-              {isEditing ? <input value={display.dateIssued} onChange={(e) => setDisplay((d) => ({ ...d, dateIssued: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.dateIssued}</p>}
+              {isEditing ? <input value={display.dateIssued ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, dateIssued: e.target.value }))} className={inputClass} /> : <p className={textPrimary}>{customer.dateIssued}</p>}
             </div>
           </div>
           <div className="mt-3">
