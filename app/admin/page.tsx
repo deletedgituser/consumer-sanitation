@@ -1070,15 +1070,29 @@ export default function AdminDashboardPage() {
       setIsLoadingApplications(true);
       setError(null);
       const response = await fetch("/api/applications");
-      if (!response.ok) throw new Error("Failed to fetch applications");
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const msg =
+          data && typeof (data as { error?: string }).error === "string"
+            ? (data as { error: string }).error
+            : "Request failed";
+        throw new Error(`${response.status} — ${msg}`);
+      }
+
+      if (!Array.isArray(data)) {
+        throw new Error("Invalid response: expected a list of applications");
+      }
 
       const mappedData = data.map((app: any) => mapApiApplicationToCustomer(app));
       setApplications(mappedData);
-    } catch {
-      setError("Failed to load applications");
-      // Removed fallback to mock data on error
-      // setApplications(mockCustomers);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load applications";
+      setError(
+        message.includes("—")
+          ? message
+          : `Failed to load applications (${message}). Check that you are signed in and the database is reachable.`,
+      );
     } finally {
       setIsLoadingApplications(false);
     }
