@@ -414,7 +414,7 @@ export default function VerifyCustomerPage() {
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
   const stripSymbolsExceptHyphen = (value: string) =>
-    value.replace(/[^a-zA-Z0-9\\s-]+/g, "");
+    value.replace(/[^a-zA-Z0-9\s-]+/g, "");
 
   const updateNoSymbols =
     (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>

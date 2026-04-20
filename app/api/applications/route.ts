@@ -36,7 +36,8 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json(applications);
-  } catch {
+  } catch (err) {
+    console.error("[GET /api/applications]", err);
     return NextResponse.json(
       { error: "Failed to fetch applications" },
       { status: 500 }
