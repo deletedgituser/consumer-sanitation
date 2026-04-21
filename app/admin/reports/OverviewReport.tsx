@@ -693,9 +693,21 @@ export default function OverviewReport({
     recentActivity,
   } = data;
 
-  const approvedPct = totals.all === 0 ? 0 : totals.approved / totals.all;
+  // Counts are action-based (each approve/decline transaction counts once),
+  // so dividing by application count can exceed 100%. The right denominator
+  // depends on what the ring represents:
+  //   • Approved / Declined → share of all *decisions* (actions)
+  //   • Pending             → share of all *applications* still awaiting review
+  const approvedPct =
+    totals.decided === 0 ? 0 : totals.approved / totals.decided;
+  const declinedPct =
+    totals.decided === 0 ? 0 : totals.declined / totals.decided;
   const pendingPct = totals.all === 0 ? 0 : totals.pending / totals.all;
-  const declinedPct = totals.all === 0 ? 0 : totals.declined / totals.all;
+
+  // Mini "Decided" ring shows the share of *applications* that have received
+  // at least one decision — always capped at 100%, app-based.
+  const decidedAppsPct =
+    totals.all === 0 ? 0 : Math.min(1, (totals.all - totals.pending) / totals.all);
 
   return (
     <div className={`report-viewport dash-viewport ${embedded ? "report-viewport-embedded" : ""}`}>
@@ -792,7 +804,10 @@ export default function OverviewReport({
             <section className="dash-card">
               <header className="dash-card-head">
                 <h3 className="dash-card-title">Status Breakdown</h3>
-                <span className="dash-card-sub">{totals.all} total</span>
+                <span className="dash-card-sub">
+                  {totals.decided} decision{totals.decided === 1 ? "" : "s"} · {totals.all} app
+                  {totals.all === 1 ? "" : "s"}
+                </span>
               </header>
               <div className="dash-rings">
                 <div className="dash-ring-item">
@@ -922,11 +937,11 @@ export default function OverviewReport({
                 </div>
                 <div className="dash-mini-ring">
                   <DonutRing
-                    percent={totals.all === 0 ? 0 : totals.decided / totals.all}
+                    percent={decidedAppsPct}
                     color="#6366F1"
                     size={72}
                     stroke={8}
-                    value={fmtPercent(totals.all === 0 ? 0 : totals.decided / totals.all, 0)}
+                    value={fmtPercent(decidedAppsPct, 0)}
                     valueColor="#6366F1"
                   />
                   <div className="dash-mini-ring-label">Decided</div>
