@@ -29,6 +29,7 @@ model User {
   activityLogs        ActivityLog[]
   createdApplications Application[] @relation("CreatedBy")
   updatedApplications Application[] @relation("UpdatedBy")
+  resolvedTickets     SupportTicket[] @relation("TicketResolvedBy")
 
   @@index([username])
   @@index([email])
@@ -256,6 +257,53 @@ enum LogAction {
   USER_LOGIN
   USER_LOGOUT
   SETTINGS_CHANGED
+}
+
+// ============================================================================
+// SUPPORT TICKETS (e.g. ID verification help requests)
+// ============================================================================
+
+enum TicketCategory {
+  ID_MISSPELLED    // Name on ID is misspelled vs. our records
+  NO_ID            // Customer doesn't have a valid ID
+  ID_IN_4PS        // ID is registered under 4Ps program
+  OTHER
+}
+
+enum TicketStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+model SupportTicket {
+  id             String         @id @default(cuid())
+  // Who filed it
+  name           String
+  address        String
+  location       String?
+  phoneNumber    String
+  // What it's about
+  accountNumber  String?        // optional — link to the account they were verifying
+  category       TicketCategory
+  message        String?        @db.Text
+  // Attachment (ID photo / proof) — stored as a web path like /uploads/tickets/...
+  attachmentUrl  String?
+  attachmentName String?
+  // Lifecycle
+  status         TicketStatus   @default(OPEN)
+  resolutionNote String?        @db.Text
+  resolvedAt     DateTime?
+  resolvedById   String?
+  resolvedBy     User?          @relation("TicketResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  // Timestamps
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status, createdAt])
+  @@index([accountNumber])
+  @@index([category])
 }
 
 // ============================================================================

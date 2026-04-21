@@ -382,6 +382,31 @@ export default function VerifyPage() {
               </p>
             )}
 
+            {!isVerified && (
+              <div
+                className={`flex flex-col items-center gap-2 rounded-2xl border p-4 text-center ${
+                  verificationMessage
+                    ? "border-amber-300/80 bg-amber-50"
+                    : "border-neutral-200/80 bg-[#faf9f6]"
+                }`}
+              >
+                <p className="text-sm text-neutral-700">
+                  {verificationMessage
+                    ? "Having trouble? You can file a support ticket and our admin will review your case."
+                    : "Can't verify your ID? Submit a support ticket and we'll help you."}
+                </p>
+                <Link
+                  href={`/verify/ticket?account=${encodeURIComponent(accountNumber)}`}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-neutral-800"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M8 4h8a2 2 0 012 2v14l-4-2-4 2-4-2V6a2 2 0 012-2z" />
+                  </svg>
+                  Request a support ticket
+                </Link>
+              </div>
+            )}
+
             {ocrPreviewText && (
               <details className="rounded-xl border border-neutral-200/80 bg-[#faf9f6] p-3 text-sm text-neutral-600">
                 <summary className="cursor-pointer font-medium text-neutral-700">OCR preview</summary>
