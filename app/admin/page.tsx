@@ -50,6 +50,9 @@ type Customer = {
   /** Customer portal (landing): simple_correction | change_owner_purchase | change_owner_inheritance */
   customerUpdateReason?: string | null;
   pendingDiff?: Record<string, { before: string; after: string }> | null;
+  /** ISO timestamps from the Application row; used to sort the recent list. */
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 // activity log type returned from /api/logs
@@ -128,11 +131,17 @@ function CustomerDetail({
   const setDisplay = setDraft;
 
   const diffLabels: Record<string, string> = {
+    appType: "Application type",
+    membership: "Membership",
+    area: "Area",
+    district: "District",
+    barangay: "Barangay",
     firstName: "First name",
     middleName: "Middle name",
     lastName: "Last name",
     suffixName: "Suffix",
     birthdate: "Birthdate",
+    noMiddleName: "No middle name",
     gender: "Gender",
     civilStatus: "Civil status",
     spouseFirst: "Spouse first name",
@@ -145,16 +154,24 @@ function CustomerDetail({
     contactNumberForContacting: "Contact number (for contacting only)",
     landline: "Landline",
     email: "Email",
+    privacyConsent: "Privacy consent",
+    privacyNewsletter: "Privacy — newsletter",
+    privacyEmail: "Privacy — email",
+    privacySms: "Privacy — SMS",
+    privacyPhone: "Privacy — phone",
+    privacySocial: "Privacy — social",
     cosignatory: "Co-signatory",
     witness: "Witness",
     notes: "Notes",
+    customerUpdateReason: "Update reason",
   };
 
   const pendingDiffEntries = useMemo(() => {
     const diff = customer.pendingDiff;
     if (!diff || typeof diff !== "object") return [];
     return Object.entries(diff)
-      .filter(([k]) => k !== "status" && k !== "orNumber" && k !== "dateIssued" && k !== "area")
+      // Admin-only workflow fields – never surface on the customer-changes summary.
+      .filter(([k]) => k !== "status" && k !== "orNumber" && k !== "dateIssued")
       .map(([k, v]) => ({
         key: k,
         label: diffLabels[k] ?? k,
@@ -190,13 +207,51 @@ function CustomerDetail({
     const v = customer.pendingDiff?.[key];
     return v?.before ?? "";
   };
-  const originalValue = (key: keyof Customer, current: unknown) => {
-    if (customer.pendingDiff?.[key as string]) {
-      const b = getBefore(key as string);
-      return b !== "" ? b : "—";
+  // The blue "current" cards should render the APPROVED baseline: i.e. the
+  // value that existed in the DB before the customer's pending edit. While a
+  // customer edit is still pending admin review, use the pendingDiff `before`
+  // value so the admin can clearly compare old (blue) vs proposed (green).
+  // Once the application is no longer pending (approved/declined), blue just
+  // shows the value stored in the DB.
+  const originalValue = (key: keyof Customer | string, current: unknown) => {
+    if (isPending) {
+      const pending = customer.pendingDiff?.[key as string];
+      if (pending && typeof pending.before !== "undefined") {
+        const s = String(pending.before ?? "");
+        return s.trim() ? s : "—";
+      }
     }
     const s = String(current ?? "");
     return s.trim() ? s : "—";
+  };
+
+  // Same baseline idea, but returns the raw value (string/boolean/etc.) so
+  // callers can use it for conditional rendering (e.g. appType === "new").
+  // Booleans in pendingDiff are stored as the strings "true"/"false".
+  const baselineValue = <T,>(key: string, fallback: T): T | string | boolean => {
+    if (!isPending) return fallback;
+    const pending = customer.pendingDiff?.[key];
+    if (!pending || typeof pending.before === "undefined") return fallback;
+    const raw = pending.before;
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    return raw;
+  };
+
+  // Render a before → after diff snippet for the "Updated Xxx" cards so the
+  // admin can see exactly what the customer changed, not just the new value.
+  const renderDiff = (key: string, extraClass = "") => {
+    const before = getBefore(key);
+    const after = getAfter(key);
+    const beforeText = before && before.trim() ? before : "—";
+    const afterText = after && after.trim() ? after : "—";
+    return (
+      <p className={`flex flex-wrap items-center gap-2 ${textPrimary} ${extraClass}`}>
+        <span className={`line-through ${textMuted}`}>{beforeText}</span>
+        <span aria-hidden className={textMuted}>→</span>
+        <span className="font-semibold">{afterText}</span>
+      </p>
+    );
   };
 
   const hasAnyDiff = (keys: string[]) => keys.some((k) => !!customer.pendingDiff?.[k]);
@@ -276,7 +331,7 @@ function CustomerDetail({
             </select>
           ) : (
             <p className={textPrimary}>
-              {customer.appType === "new" ? "As New Member" : "As Change/New Occupant"}
+              {baselineValue("appType", customer.appType) === "new" ? "As New Member" : "As Change/New Occupant"}
             </p>
           )}
         </div>
@@ -304,13 +359,36 @@ function CustomerDetail({
             </select>
           ) : (
             <p className={textPrimary}>
-              {customer.membership === "household"
+              {baselineValue("membership", customer.membership) === "household"
                 ? "Household"
                 : "Corporate/Sectoral/Business"}
             </p>
           )}
         </div>
       </div>
+
+      {/* Updated Application Type / Membership (only changed fields) */}
+      {isPending &&
+        !isEditing &&
+        hasAnyDiff(["appType", "membership"]) && (
+          <div className="mb-4">
+            <div className={updatedHeaderClass}>{updatedHeader("Updated Application Type")}</div>
+            <div className={`${boxClass} space-y-3`}>
+              {customer.pendingDiff?.appType && (
+                <div>
+                  <p className={`text-xs font-medium ${textMuted}`}>Application Type</p>
+                  {renderDiff("appType")}
+                </div>
+              )}
+              {customer.pendingDiff?.membership && (
+                <div>
+                  <p className={`text-xs font-medium ${textMuted}`}>Membership Type</p>
+                  {renderDiff("membership")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
       {/* Account Number */}
       <div className="mb-4">
@@ -339,7 +417,7 @@ function CustomerDetail({
               {isEditing ? (
                 <input value={display.area ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, area: e.target.value }))} className={inputClass} />
               ) : (
-                <p className={textPrimary}>{customer.area}</p>
+                <p className={textPrimary}>{originalValue("area", customer.area)}</p>
               )}
             </div>
             <div>
@@ -347,7 +425,7 @@ function CustomerDetail({
               {isEditing ? (
                 <input value={display.district ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, district: e.target.value }))} className={inputClass} />
               ) : (
-                <p className={textPrimary}>{customer.district}</p>
+                <p className={textPrimary}>{originalValue("district", customer.district)}</p>
               )}
             </div>
             <div>
@@ -355,7 +433,7 @@ function CustomerDetail({
               {isEditing ? (
                 <input value={display.barangay ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, barangay: e.target.value }))} className={inputClass} />
               ) : (
-                <p className={textPrimary}>{customer.barangay}</p>
+                <p className={textPrimary}>{originalValue("barangay", customer.barangay)}</p>
               )}
             </div>
             <div className="flex items-end gap-2">
@@ -373,6 +451,37 @@ function CustomerDetail({
         </div>
       </div>
 
+      {/* Updated Record Location (only changed fields) */}
+      {isPending &&
+        !isEditing &&
+        hasAnyDiff(["area", "district", "barangay"]) && (
+          <div className="mb-4">
+            <div className={updatedHeaderClass}>{updatedHeader("Updated Record Location")}</div>
+            <div className={boxClass}>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {customer.pendingDiff?.area && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Area</p>
+                    {renderDiff("area")}
+                  </div>
+                )}
+                {customer.pendingDiff?.district && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>District</p>
+                    {renderDiff("district")}
+                  </div>
+                )}
+                {customer.pendingDiff?.barangay && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Barangay</p>
+                    {renderDiff("barangay")}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       {/* Applicant Information */}
       <div className="mb-4">
         <div className={sectionHeaderClass}>Applicant Information</div>
@@ -385,7 +494,7 @@ function CustomerDetail({
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Middle Name</p>
-                {isEditing ? <input value={display.middleName ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, middleName: e.target.value }))} className={inputClass} disabled={display.noMiddleName} /> : <p className={textPrimary}>{customer.noMiddleName ? "—" : originalValue("middleName", customer.middleName)}</p>}
+                {isEditing ? <input value={display.middleName ?? ""} onChange={(e) => setDisplay((d) => ({ ...d, middleName: e.target.value }))} className={inputClass} disabled={display.noMiddleName} /> : <p className={textPrimary}>{baselineValue("noMiddleName", customer.noMiddleName) ? "—" : originalValue("middleName", customer.middleName)}</p>}
               </div>
               <div>
                 <p className={`text-xs font-medium ${textMuted}`}>Last Name</p>
@@ -406,7 +515,7 @@ function CustomerDetail({
                     <span className={textMuted}>No Middle Name</span>
                   </label>
                 ) : (
-                  <p className={`text-sm ${textMuted}`}>{customer.noMiddleName ? "☑ No Middle Name" : "☐ No Middle Name"}</p>
+                  <p className={`text-sm ${textMuted}`}>{baselineValue("noMiddleName", customer.noMiddleName) ? "☑ No Middle Name" : "☐ No Middle Name"}</p>
                 )}
               </div>
               <div>
@@ -417,7 +526,13 @@ function CustomerDetail({
                     <option value="female">Female</option>
                   </select>
                 ) : (
-                  <p className={textPrimary}>{originalValue("gender", customer.gender === "male" ? "Male" : "Female")}</p>
+                  <p className={textPrimary}>{(() => {
+                    const raw = baselineValue("gender", customer.gender);
+                    const norm = String(raw ?? "").toLowerCase();
+                    if (norm === "male") return "Male";
+                    if (norm === "female") return "Female";
+                    return "—";
+                  })()}</p>
                 )}
               </div>
               <div className="sm:col-span-2">
@@ -437,7 +552,7 @@ function CustomerDetail({
       {/* Updated Applicant Information (only show changed fields) */}
       {isPending &&
         !isEditing &&
-        hasAnyDiff(["firstName", "middleName", "lastName", "suffixName", "birthdate", "gender", "civilStatus"]) && (
+        hasAnyDiff(["firstName", "middleName", "lastName", "suffixName", "birthdate", "noMiddleName", "gender", "civilStatus"]) && (
           <div className="mb-4">
             <div className={updatedHeaderClass}>{updatedHeader("Updated Applicant Information")}</div>
             <div className={boxClass}>
@@ -446,43 +561,49 @@ function CustomerDetail({
                   {customer.pendingDiff?.firstName && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>First Name</p>
-                      <p className={textPrimary}>{getAfter("firstName") || "—"}</p>
+                      {renderDiff("firstName")}
                     </div>
                   )}
                   {customer.pendingDiff?.middleName && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>Middle Name</p>
-                      <p className={textPrimary}>{getAfter("middleName") || "—"}</p>
+                      {renderDiff("middleName")}
                     </div>
                   )}
                   {customer.pendingDiff?.lastName && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>Last Name</p>
-                      <p className={textPrimary}>{getAfter("lastName") || "—"}</p>
+                      {renderDiff("lastName")}
                     </div>
                   )}
                   {customer.pendingDiff?.suffixName && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>Suffix Name</p>
-                      <p className={textPrimary}>{getAfter("suffixName") || "—"}</p>
+                      {renderDiff("suffixName")}
                     </div>
                   )}
                   {customer.pendingDiff?.birthdate && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>Birthdate</p>
-                      <p className={textPrimary}>{getAfter("birthdate") || "—"}</p>
+                      {renderDiff("birthdate")}
+                    </div>
+                  )}
+                  {customer.pendingDiff?.noMiddleName && (
+                    <div>
+                      <p className={`text-xs font-medium ${textMuted}`}>No Middle Name</p>
+                      {renderDiff("noMiddleName")}
                     </div>
                   )}
                   {customer.pendingDiff?.gender && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>Gender</p>
-                      <p className={textPrimary}>{getAfter("gender") || "—"}</p>
+                      {renderDiff("gender")}
                     </div>
                   )}
                   {customer.pendingDiff?.civilStatus && (
                     <div className="sm:col-span-2">
                       <p className={`text-xs font-medium ${textMuted}`}>Civil Status</p>
-                      <p className={`capitalize ${textPrimary}`}>{getAfter("civilStatus") || "—"}</p>
+                      {renderDiff("civilStatus", "capitalize")}
                     </div>
                   )}
                 </div>
@@ -540,31 +661,31 @@ function CustomerDetail({
                   {customer.pendingDiff?.spouseFirst && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>First Name</p>
-                      <p className={textPrimary}>{getAfter("spouseFirst") || "—"}</p>
+                      {renderDiff("spouseFirst")}
                     </div>
                   )}
                   {customer.pendingDiff?.spouseMiddle && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>Middle Name</p>
-                      <p className={textPrimary}>{getAfter("spouseMiddle") || "—"}</p>
+                      {renderDiff("spouseMiddle")}
                     </div>
                   )}
                   {customer.pendingDiff?.spouseLast && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>Last Name</p>
-                      <p className={textPrimary}>{getAfter("spouseLast") || "—"}</p>
+                      {renderDiff("spouseLast")}
                     </div>
                   )}
                   {customer.pendingDiff?.spouseSuffix && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>Suffix Name</p>
-                      <p className={textPrimary}>{getAfter("spouseSuffix") || "—"}</p>
+                      {renderDiff("spouseSuffix")}
                     </div>
                   )}
                   {customer.pendingDiff?.spouseBirthdate && (
                     <div>
                       <p className={`text-xs font-medium ${textMuted}`}>Birthdate</p>
-                      <p className={textPrimary}>{getAfter("spouseBirthdate") || "—"}</p>
+                      {renderDiff("spouseBirthdate")}
                     </div>
                   )}
                 </div>
@@ -601,36 +722,44 @@ function CustomerDetail({
       {/* Updated Residence & Contact (only changed fields) */}
       {isPending &&
         !isEditing &&
-        hasAnyDiff(["residenceAddress", "cellphone", "landline", "email"]) && (
+        hasAnyDiff(["residenceAddress", "cellphone", "landline", "email", "contactNumberForContacting"]) && (
           <div className="mb-4">
             <div className={updatedHeaderClass}>{updatedHeader("Updated Residence & Contact")}</div>
             <div className={`${boxClass} space-y-3`}>
               {customer.pendingDiff?.residenceAddress && (
                 <div>
                   <p className={`text-xs font-medium ${textMuted}`}>Residence Address</p>
-                  <p className={textPrimary}>{getAfter("residenceAddress") || "—"}</p>
+                  {renderDiff("residenceAddress")}
                 </div>
               )}
               <div className="grid gap-3 sm:grid-cols-3">
                 {customer.pendingDiff?.cellphone && (
                   <div>
                     <p className={`text-xs font-medium ${textMuted}`}>Cellphone No.</p>
-                    <p className={textPrimary}>{getAfter("cellphone") || "—"}</p>
+                    {renderDiff("cellphone")}
                   </div>
                 )}
                 {customer.pendingDiff?.landline && (
                   <div>
                     <p className={`text-xs font-medium ${textMuted}`}>Landline No.</p>
-                    <p className={textPrimary}>{getAfter("landline") || "—"}</p>
+                    {renderDiff("landline")}
                   </div>
                 )}
                 {customer.pendingDiff?.email && (
                   <div>
                     <p className={`text-xs font-medium ${textMuted}`}>E-mail Address</p>
-                    <p className={textPrimary}>{getAfter("email") || "—"}</p>
+                    {renderDiff("email")}
                   </div>
                 )}
               </div>
+              {customer.pendingDiff?.contactNumberForContacting && (
+                <div>
+                  <p className={`text-xs font-medium ${textMuted}`}>
+                    Contact number (for contacting only)
+                  </p>
+                  {renderDiff("contactNumberForContacting")}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -663,23 +792,79 @@ function CustomerDetail({
           ) : (
             <>
               <p className={textPrimary}>
-                {customer.privacyConsent
+                {baselineValue("privacyConsent", customer.privacyConsent)
                   ? "Yes, I would like to receive information about the goods and services provided by ANECO, INC., via the following channels:"
                   : "No consent for marketing communications."}
               </p>
-              {customer.privacyConsent && (
+              {baselineValue("privacyConsent", customer.privacyConsent) && (
                 <ul className={`mt-2 flex flex-wrap gap-4 text-sm ${textMuted}`}>
-                  {customer.privacyNewsletter && <li>newsletter</li>}
-                  {customer.privacyEmail && <li>email</li>}
-                  {customer.privacySms && <li>text message</li>}
-                  {customer.privacyPhone && <li>telephone call</li>}
-                  {customer.privacySocial && <li>social media</li>}
+                  {baselineValue("privacyNewsletter", customer.privacyNewsletter) && <li>newsletter</li>}
+                  {baselineValue("privacyEmail", customer.privacyEmail) && <li>email</li>}
+                  {baselineValue("privacySms", customer.privacySms) && <li>text message</li>}
+                  {baselineValue("privacyPhone", customer.privacyPhone) && <li>telephone call</li>}
+                  {baselineValue("privacySocial", customer.privacySocial) && <li>social media</li>}
                 </ul>
               )}
             </>
           )}
         </div>
       </div>
+
+      {/* Updated Privacy Option (only changed fields) */}
+      {isPending &&
+        !isEditing &&
+        hasAnyDiff([
+          "privacyConsent",
+          "privacyNewsletter",
+          "privacyEmail",
+          "privacySms",
+          "privacyPhone",
+          "privacySocial",
+        ]) && (
+          <div className="mb-4">
+            <div className={updatedHeaderClass}>{updatedHeader("Updated Privacy Option")}</div>
+            <div className={boxClass}>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {customer.pendingDiff?.privacyConsent && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Consent</p>
+                    {renderDiff("privacyConsent")}
+                  </div>
+                )}
+                {customer.pendingDiff?.privacyNewsletter && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Newsletter</p>
+                    {renderDiff("privacyNewsletter")}
+                  </div>
+                )}
+                {customer.pendingDiff?.privacyEmail && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Email</p>
+                    {renderDiff("privacyEmail")}
+                  </div>
+                )}
+                {customer.pendingDiff?.privacySms && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>SMS</p>
+                    {renderDiff("privacySms")}
+                  </div>
+                )}
+                {customer.pendingDiff?.privacyPhone && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Phone</p>
+                    {renderDiff("privacyPhone")}
+                  </div>
+                )}
+                {customer.pendingDiff?.privacySocial && (
+                  <div>
+                    <p className={`text-xs font-medium ${textMuted}`}>Social media</p>
+                    {renderDiff("privacySocial")}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Co-signatory, Witness, Contract Status */}
       <div className="mb-4">
@@ -719,7 +904,7 @@ function CustomerDetail({
       {/* Updated Other Details (only changed fields) */}
       {isPending &&
         !isEditing &&
-        hasAnyDiff(["cosignatory", "witness", "notes"]) && (
+        hasAnyDiff(["cosignatory", "witness", "notes", "customerUpdateReason"]) && (
           <div className="mb-4">
             <div className={updatedHeaderClass}>{updatedHeader("Updated Other Details")}</div>
             <div className={boxClass}>
@@ -727,20 +912,26 @@ function CustomerDetail({
                 {customer.pendingDiff?.cosignatory && (
                   <div>
                     <p className={`text-xs font-medium ${textMuted}`}>Co-signatory</p>
-                    <p className={textPrimary}>{getAfter("cosignatory") || "—"}</p>
+                    {renderDiff("cosignatory")}
                   </div>
                 )}
                 {customer.pendingDiff?.witness && (
                   <div>
                     <p className={`text-xs font-medium ${textMuted}`}>Witness</p>
-                    <p className={textPrimary}>{getAfter("witness") || "—"}</p>
+                    {renderDiff("witness")}
                   </div>
                 )}
               </div>
+              {customer.pendingDiff?.customerUpdateReason && (
+                <div className="mt-3">
+                  <p className={`text-xs font-medium ${textMuted}`}>Update reason</p>
+                  {renderDiff("customerUpdateReason")}
+                </div>
+              )}
               {customer.pendingDiff?.notes && (
                 <div className="mt-3">
                   <p className={`text-xs font-medium ${textMuted}`}>Notes</p>
-                  <p className={textPrimary}>{getAfter("notes") || "—"}</p>
+                  {renderDiff("notes")}
                 </div>
               )}
             </div>
@@ -1036,6 +1227,8 @@ export default function AdminDashboardPage() {
     dateIssued: app.dateIssued,
     notes: app.notes || "",
     accountNumber: app.accountNumber || "",
+    createdAt: app.createdAt ?? undefined,
+    updatedAt: app.updatedAt ?? undefined,
     customerUpdateReason: (() => {
       if (app.customerUpdateReason != null) return app.customerUpdateReason;
       const logs = Array.isArray(app.activityLogs) ? app.activityLogs : [];
@@ -1049,15 +1242,48 @@ export default function AdminDashboardPage() {
     })(),
     pendingDiff: (() => {
       const logs = Array.isArray(app.activityLogs) ? app.activityLogs : [];
-      const customerLog = logs.find((l: any) => {
+      if (logs.length === 0) return null;
+
+      const isCustomerLog = (l: any) => {
         const md = l?.metadata;
         if (!md?.diff) return false;
-        // Prefer explicit marker; otherwise treat unauthenticated update logs as customer-submitted.
         if (md?.source === "customer") return true;
         return !l?.userId;
+      };
+
+      // Cutoff: the most recent admin approve/decline. Any customer edit
+      // on or before that timestamp is considered resolved.
+      const adminActionLog = logs.find((l: any) =>
+        l?.action === "APPLICATION_APPROVED" || l?.action === "APPLICATION_DECLINED",
+      );
+      const cutoffTs = adminActionLog?.createdAt
+        ? new Date(adminActionLog.createdAt).getTime()
+        : 0;
+
+      // Show ONLY the most recent customer submission's diff (after the
+      // admin cutoff). Each customer save is treated as a fresh "pending
+      // review" snapshot; the admin sees exactly what the customer just
+      // changed, not an accumulation of every past edit.
+      const latestCustomerLog = logs.find((l: any) => {
+        if (!isCustomerLog(l)) return false;
+        const logTs = l?.createdAt ? new Date(l.createdAt).getTime() : 0;
+        return logTs > cutoffTs;
       });
-      const diff = customerLog?.metadata?.diff;
-      return diff && typeof diff === "object" ? diff : null;
+
+      const diff = latestCustomerLog?.metadata?.diff;
+      if (!diff || typeof diff !== "object") return null;
+
+      // Normalize before/after to strings and drop no-op entries.
+      const cleaned: Record<string, { before: string; after: string }> = {};
+      for (const [key, val] of Object.entries(diff) as [string, any][]) {
+        if (!val || typeof val !== "object") continue;
+        const before = String(val.before ?? "");
+        const after = String(val.after ?? "");
+        if (before === after) continue;
+        cleaned[key] = { before, after };
+      }
+
+      return Object.keys(cleaned).length > 0 ? cleaned : null;
     })(),
   });
 
@@ -1332,7 +1558,7 @@ export default function AdminDashboardPage() {
 
   const showApplications =
     activeNav === "dashboard" || activeNav === "pending" || activeNav === "approved" || activeNav === "declined";
-  const listCustomers =
+  const filteredCustomers =
     activeNav === "dashboard"
       ? applications
       : activeNav === "pending"
@@ -1346,6 +1572,15 @@ export default function AdminDashboardPage() {
             ? applications.filter((c) => normalizeStatus(getEffectiveStatus(c)) === "declined")
             : applications;
 
+  // Sort by most recent activity (updatedAt preferred, falls back to createdAt)
+  // so the row the customer just edited — or the admin just approved/declined —
+  // floats to the top of the list.
+  const listCustomers = [...filteredCustomers].sort((a, b) => {
+    const aTs = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+    const bTs = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+    return bTs - aTs;
+  });
+
   const effectiveSelected =
     selected
       ? (customerEdits[selected.id] ?? { ...selected, status: getEffectiveStatus(selected) })
@@ -1353,14 +1588,29 @@ export default function AdminDashboardPage() {
 
   const handleApprove = async (c: Customer) => {
     try {
-      // Step 1: Approve in local backend
-      const response = await fetch(`/api/applications/${c.accountNumber}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "approve" }),
-      });
+      if (!c.accountNumber) {
+        alert("This application has no account number yet, cannot approve.");
+        return;
+      }
 
-      if (!response.ok) throw new Error("Failed to approve application");
+      // Step 1: Approve in local backend
+      const response = await fetch(
+        `/api/applications/${encodeURIComponent(c.accountNumber)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "approve" }),
+        },
+      );
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        console.error(
+          `[admin] PATCH approve failed for ${c.accountNumber} (HTTP ${response.status}):`,
+          errText,
+        );
+        throw new Error(`Failed to approve application: HTTP ${response.status} ${errText}`);
+      }
 
       // Step 2: Sync approved status to FastAPI backend with Bearer token
       const fastApiBase = process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "http://localhost:8000";
@@ -1405,21 +1655,38 @@ export default function AdminDashboardPage() {
       await fetchApplications();
       // Refresh logs after action
       await fetchLogs();
-    } catch {
-      alert("Failed to approve application. Please try again.");
+    } catch (err) {
+      console.error("[admin] handleApprove error:", err);
+      const detail = err instanceof Error ? err.message : String(err);
+      alert(`Failed to approve application. ${detail}`);
     }
   };
 
   const handleDecline = async (c: Customer) => {
     try {
-      // Step 1: Decline in local backend
-      const response = await fetch(`/api/applications/${c.accountNumber}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "decline" }),
-      });
+      if (!c.accountNumber) {
+        alert("This application has no account number yet, cannot decline.");
+        return;
+      }
 
-      if (!response.ok) throw new Error("Failed to decline application");
+      // Step 1: Decline in local backend
+      const response = await fetch(
+        `/api/applications/${encodeURIComponent(c.accountNumber)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "decline" }),
+        },
+      );
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        console.error(
+          `[admin] PATCH decline failed for ${c.accountNumber} (HTTP ${response.status}):`,
+          errText,
+        );
+        throw new Error(`Failed to decline application: HTTP ${response.status} ${errText}`);
+      }
 
       // Step 2: Sync decline status to FastAPI backend with Bearer token
       const fastApiBase = process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "http://localhost:8000";
@@ -1461,8 +1728,10 @@ export default function AdminDashboardPage() {
       await fetchApplications();
       // Refresh logs after action
       await fetchLogs();
-    } catch {
-      alert("Failed to decline application. Please try again.");
+    } catch (err) {
+      console.error("[admin] handleDecline error:", err);
+      const detail = err instanceof Error ? err.message : String(err);
+      alert(`Failed to decline application. ${detail}`);
     }
   };
 

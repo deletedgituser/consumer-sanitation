@@ -51,48 +51,148 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const session = await auth();
 
-    // Check if application already exists
-    const existing = await prisma.application.findUnique({
-      // cast to any to support accountNumber unique lookup regardless of generated TypeScript helper
-      where: { accountNumber: body.accountNumber } as any,
-      include: {
-        createdBy: {
-          select: {
-            id: true,
-            username: true,
-            name: true,
-          },
+    const createdByInclude = {
+      createdBy: {
+        select: {
+          id: true,
+          username: true,
+          name: true,
         },
       },
-    });
+    } as const;
 
-    // If we already have an application, optionally update notes (e.g. to store update reason)
-    if (existing) {
-      if (typeof body.notes === "string" && body.notes.trim().length > 0 && body.notes !== existing.notes) {
-        const updated = await prisma.application.update({
+    const fullInclude = {
+      createdBy: {
+        select: {
+          id: true,
+          username: true,
+          name: true,
+        },
+      },
+      updatedBy: {
+        select: {
+          id: true,
+          username: true,
+          name: true,
+        },
+      },
+    } as const;
+
+    // 1) Look up by accountNumber (primary external key from FastAPI / customer portal)
+    let existing = body.accountNumber
+      ? await prisma.application.findUnique({
+          // cast to any to support accountNumber unique lookup regardless of generated TypeScript helper
           where: { accountNumber: body.accountNumber } as any,
-          data: { notes: body.notes },
-          include: {
-            createdBy: {
-              select: {
-                id: true,
-                username: true,
-                name: true,
-              },
-            },
-            updatedBy: {
-              select: {
-                id: true,
-                username: true,
-                name: true,
-              },
-            },
-          },
-        });
-        return NextResponse.json(updated, { status: 200 });
+          include: createdByInclude,
+        })
+      : null;
+
+    // 2) If not found by accountNumber, fall back to recordNumber. This handles the common case
+    //    where a local row was seeded/created using only recordNumber (e.g. the seed script),
+    //    and the customer is now entering via a different external accountNumber. Without this
+    //    fallback, create() would throw P2002 on the unique recordNumber and subsequent PATCHes
+    //    would 404 because no row exists under the new accountNumber.
+    if (!existing && body.recordNumber) {
+      const byRecord = await prisma.application.findUnique({
+        where: { recordNumber: body.recordNumber },
+        include: createdByInclude,
+      });
+
+      if (byRecord) existing = byRecord;
+    }
+
+    // If we already have an application:
+    //   - Always reconcile the accountNumber (non-user-editable linkage between
+    //     FastAPI and the local row) when one is provided.
+    //   - Only sync the FastAPI customer snapshot (name/address/contact/etc.)
+    //     into the row if the row has NEVER been touched by a customer edit.
+    //     Once any customer-originated ActivityLog exists, the local DB is the
+    //     source of truth for the applicant's work-in-progress edits and must
+    //     not be overwritten by the FastAPI snapshot on subsequent page visits.
+    if (existing) {
+      const syncPayload: Record<string, any> = {};
+
+      // Reconcile external accountNumber → existing row (safe, not user-edited).
+      if (body.accountNumber && existing.accountNumber !== body.accountNumber) {
+        syncPayload.accountNumber = body.accountNumber;
       }
 
-      return NextResponse.json(existing, { status: 200 });
+      // Has the customer (or an admin action) ever modified this application?
+      // We treat ANY activity log for this application as "dirty" so we don't
+      // clobber pending edits, admin updates, or approve/decline context.
+      const anyActivity = await prisma.activityLog.findFirst({
+        where: { applicationId: existing.id },
+        select: { id: true },
+      });
+      const isDirty = !!anyActivity;
+
+      if (!isDirty) {
+        // Whitelist of fields that POST /api/applications is allowed to
+        // overwrite on a pristine row. These mirror what `mapApiToForm`
+        // returns from the FastAPI customer snapshot. Workflow fields
+        // (status, orNumber, dateIssued, approvedAt, declinedAt,
+        // declineReason, notes, cosignatory, witness) are intentionally
+        // excluded so we don't clobber admin actions.
+        const syncableKeys = [
+          "appType",
+          "membership",
+          "area",
+          "district",
+          "barangay",
+          "residenceAddress",
+          "firstName",
+          "middleName",
+          "lastName",
+          "suffixName",
+          "birthdate",
+          "noMiddleName",
+          "gender",
+          "civilStatus",
+          "spouseFirst",
+          "spouseMiddle",
+          "spouseLast",
+          "spouseSuffix",
+          "spouseBirthdate",
+          "cellphone",
+          "landline",
+          "email",
+          "privacyConsent",
+          "privacyNewsletter",
+          "privacyEmail",
+          "privacySms",
+          "privacyPhone",
+          "privacySocial",
+        ] as const;
+
+        for (const key of syncableKeys) {
+          const incoming = (body as Record<string, any>)[key];
+          if (incoming === undefined) continue;
+          // Avoid wiping a populated field with an empty string from the
+          // external API – treat "" as "no value provided".
+          if (typeof incoming === "string" && incoming.trim() === "") continue;
+          const current = (existing as Record<string, any>)[key];
+          if (incoming !== current) syncPayload[key] = incoming;
+        }
+
+        if (
+          typeof body.notes === "string" &&
+          body.notes.trim().length > 0 &&
+          body.notes !== existing.notes
+        ) {
+          syncPayload.notes = body.notes;
+        }
+      }
+
+      if (Object.keys(syncPayload).length === 0) {
+        return NextResponse.json(existing, { status: 200 });
+      }
+
+      const updated = await prisma.application.update({
+        where: { id: existing.id },
+        data: syncPayload,
+        include: fullInclude,
+      });
+      return NextResponse.json(updated, { status: 200 });
     }
 
     // Create application with user tracking if authenticated, otherwise unauthenticated
@@ -157,9 +257,11 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(application, { status: 201 });
-  } catch {
+  } catch (err) {
+    console.error("[POST /api/applications]", err);
+    const message = err instanceof Error ? err.message : "Failed to create application";
     return NextResponse.json(
-      { error: "Failed to create application" },
+      { error: "Failed to create application", details: message },
       { status: 500 }
     );
   }

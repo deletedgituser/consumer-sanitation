@@ -330,15 +330,6 @@ export default function VerifyCustomerPage() {
       return;
     }
 
-    const originalName = [
-      initialFormData.firstName,
-      initialFormData.middleName,
-      initialFormData.lastName,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-
     try {
       setIsSubmitting(true);
       setSubmitError(null);
@@ -392,11 +383,9 @@ export default function VerifyCustomerPage() {
       setReviewMobileNumber("");
       setReviewMobileTouched(false);
 
-      const wantsText = updateReasonLabel
-        ? `Wants to ${updateReasonLabel}`
-        : "Application submitted";
-
-      const notifMessage = `${originalName || "Customer"}\n${wantsText}`;
+      const notifMessage = updateReasonLabel
+        ? `Your changes have been submitted and are pending review. Request: ${updateReasonLabel}.`
+        : "Your changes have been submitted and are pending review.";
 
       persistNotification(notifMessage, "INFO");
       toast.success("Application submitted successfully!");
@@ -524,9 +513,17 @@ export default function VerifyCustomerPage() {
               setForm((prev) => ({ ...prev, ...fromDb, notes: "" }));
               setInitialFormData((prev) => ({ ...prev, ...fromDb, notes: "" }));
             }
+          } else {
+            // Do not silently swallow failures here – if this POST does not persist the
+            // record, the subsequent PATCH /api/applications/[accountNumber] will 404.
+            const detail = await postRes.text();
+            console.error(
+              `[/verify-customer] Failed to ensure application record (HTTP ${postRes.status}):`,
+              detail,
+            );
           }
-        } catch {
-          // Record may already exist or create failed; form already set from external API
+        } catch (postErr) {
+          console.error("[/verify-customer] Error ensuring application record:", postErr);
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : "Failed to load account";

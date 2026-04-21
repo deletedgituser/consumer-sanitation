@@ -91,9 +91,13 @@ export async function GET(
         },
         documents: true,
         activityLogs: {
-          where: { action: "APPLICATION_UPDATED" },
+          where: {
+            action: {
+              in: ["APPLICATION_UPDATED", "APPLICATION_APPROVED", "APPLICATION_DECLINED"],
+            },
+          },
           orderBy: { createdAt: "desc" },
-          take: 10,
+          take: 50,
         },
       },
     });
@@ -250,9 +254,23 @@ export async function PATCH(
       updatedAt: new Date(),
     };
 
-    // Only set updatedById if user is authenticated (for admin actions)
-    if (session?.user) {
-      updatePayload.updatedById = session.user.id;
+    // Only set updatedById if the session user actually exists in the User table.
+    // If the DB was re-seeded after login, session.user.id could point to a user
+    // that no longer exists and Prisma would throw a FK error on update.
+    let sessionUserIsValid = false;
+    if (session?.user?.id) {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { id: true },
+      });
+      if (dbUser) {
+        sessionUserIsValid = true;
+        updatePayload.updatedById = session.user.id;
+      } else {
+        console.warn(
+          `[PATCH /api/applications/${accountNumber}] session.user.id ${session.user.id} not found in User table; skipping updatedById`,
+        );
+      }
     }
 
     const includeRelations = {
@@ -301,12 +319,15 @@ export async function PATCH(
       }
     }
 
-    // Create a single DB notification when admin approves/declines (only once per application)
+    // Notify the customer every time an admin approves or declines their
+    // application. This is independent of the admin's session validity: the
+    // customer must always see the status update in their bell, even if the
+    // admin's session user has become stale (e.g. after a DB re-seed).
     const prevStatus = (existing.status ?? "").toString();
     const newStatus = (application.status ?? "").toString();
     const didStatusChange = prevStatus !== newStatus;
     const shouldCreateStatusNotification =
-      didStatusChange && (action === "approve" || action === "decline") && !!session?.user;
+      didStatusChange && (action === "approve" || action === "decline");
 
     if (shouldCreateStatusNotification) {
       const notifType = newStatus === "APPROVED" ? "APPROVED" : newStatus === "DECLINED" ? "DECLINED" : null;
@@ -322,12 +343,9 @@ export async function PATCH(
           : null;
 
       if (notifType && notifMessage) {
-        const alreadyExists = await prisma.notification.findFirst({
-          where: { applicationId: application.id, type: notifType as any },
-          select: { id: true },
-        });
-
-        if (!alreadyExists) {
+        // Always create a fresh notification per approve/decline action so
+        // re-approvals after a customer re-edit also surface to the customer.
+        try {
           await prisma.notification.create({
             data: {
               applicationId: application.id,
@@ -335,6 +353,11 @@ export async function PATCH(
               message: notifMessage,
             },
           });
+        } catch (notifErr) {
+          console.error(
+            `[PATCH /api/applications/${accountNumber}] failed to create ${notifType} notification`,
+            notifErr,
+          );
         }
       }
     }
@@ -364,8 +387,8 @@ export async function PATCH(
       }
     }
 
-    // Log the activity (only if authenticated)
-    if (logAction && session?.user) {
+    // Log the activity (only if the session user actually exists in the DB)
+    if (logAction && sessionUserIsValid && session?.user) {
       await prisma.activityLog.create({
         data: {
           action: logAction as any,
@@ -387,8 +410,10 @@ export async function PATCH(
     return NextResponse.json(application);
   } catch (error) {
     console.error("Failed to update application", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to update application";
     return NextResponse.json(
-      { error: "Failed to update application" },
+      { error: "Failed to update application", details: message },
       { status: 500 }
     );
   }

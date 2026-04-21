@@ -24,8 +24,17 @@ export async function GET(
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
 
+    // Customer-facing feed: only show notifications meant for the customer.
+    // - INFO: "Your changes have been submitted..." (sent on customer save)
+    // - APPROVED: "Your application has been approved."
+    // - DECLINED: "Your application has been declined."
+    // The PENDING type is internal/admin-oriented ("Name: X · Application type: Y")
+    // and is intentionally excluded from the customer's bell.
     const notifications = await prisma.notification.findMany({
-      where: { applicationId: application.id },
+      where: {
+        applicationId: application.id,
+        type: { in: ["INFO", "APPROVED", "DECLINED"] },
+      },
       orderBy: { createdAt: "desc" },
     });
 
@@ -89,6 +98,48 @@ export async function POST(
   } catch {
     return NextResponse.json(
       { error: "Failed to create notification" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/applications/[accountNumber]/notifications - Mark notifications as read/unread
+// Body: { read?: boolean }  (default: true — "mark all as read")
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ accountNumber: string }> }
+) {
+  try {
+    const { accountNumber } = await params;
+    if (!accountNumber) {
+      return NextResponse.json({ error: "Account number required" }, { status: 400 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const readFlag = typeof body?.read === "boolean" ? body.read : true;
+
+    const application = await prisma.application.findUnique({
+      where: { accountNumber },
+      select: { id: true },
+    });
+
+    if (!application) {
+      return NextResponse.json({ error: "Application not found" }, { status: 404 });
+    }
+
+    const result = await prisma.notification.updateMany({
+      where: {
+        applicationId: application.id,
+        type: { in: ["INFO", "APPROVED", "DECLINED"] },
+        read: !readFlag,
+      },
+      data: { read: readFlag },
+    });
+
+    return NextResponse.json({ updated: result.count });
+  } catch {
+    return NextResponse.json(
+      { error: "Failed to update notifications" },
       { status: 500 }
     );
   }

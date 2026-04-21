@@ -27,7 +27,7 @@ export default function VerifyCustomerLandingPage() {
   const [reason, setReason] = useState<ApplicationReason>("simple_correction");
   const [ownerName, setOwnerName] = useState("");
 
-  const [notifications, setNotifications] = useState<{ id: string; message: string; type: string; createdAt?: string }[]>([]);
+  const [notifications, setNotifications] = useState<{ id: string; message: string; type: string; read?: boolean; createdAt?: string }[]>([]);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
 
@@ -99,6 +99,27 @@ export default function VerifyCustomerLandingPage() {
     }
   };
 
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications],
+  );
+
+  const markAllAsRead = async () => {
+    if (unreadCount === 0) return;
+    try {
+      const res = await fetch(`/api/applications/${encodeURIComponent(account)}/notifications`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ read: true }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setNotifications((prev) => prev.map((n) => (n.read ? n : { ...n, read: true })));
+      toast.success("All notifications marked as read");
+    } catch {
+      toast.error("Failed to mark notifications as read");
+    }
+  };
+
   const continueNext = () => {
     if (!canContinue) return;
     // After ID verification, customers should be able to edit
@@ -160,9 +181,9 @@ export default function VerifyCustomerLandingPage() {
                 <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
-                {notifications.length > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-neutral-900 px-0.5 text-[9px] font-semibold leading-none text-white sm:h-4 sm:min-w-4 sm:text-[10px]">
-                    {notifications.length > 9 ? "9+" : notifications.length}
+                {unreadCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full bg-red-600 px-0.5 text-[9px] font-semibold leading-none text-white sm:h-4 sm:min-w-4 sm:text-[10px]">
+                    {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
               </button>
@@ -172,32 +193,55 @@ export default function VerifyCustomerLandingPage() {
                 >
                   <div className="flex items-center justify-between gap-3 border-b border-neutral-200/80 px-4 py-3">
                     <h3 className="text-sm font-semibold text-neutral-900">Notifications</h3>
-                    <button
-                      type="button"
-                      onClick={clearAllNotifications}
-                      className="text-xs font-medium text-neutral-700 hover:text-neutral-900"
-                      disabled={notifications.length === 0}
-                    >
-                      Clear all
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={markAllAsRead}
+                        className="text-xs font-medium text-neutral-700 hover:text-neutral-900 disabled:cursor-not-allowed disabled:text-neutral-400"
+                        disabled={unreadCount === 0}
+                      >
+                        Mark all as read
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearAllNotifications}
+                        className="text-xs font-medium text-neutral-700 hover:text-neutral-900 disabled:cursor-not-allowed disabled:text-neutral-400"
+                        disabled={notifications.length === 0}
+                      >
+                        Clear all
+                      </button>
+                    </div>
                   </div>
                   <div className="max-h-72 overflow-y-auto py-2">
                     {notifications.length === 0 ? (
                       <p className="px-4 py-6 text-center text-sm text-neutral-500">No notifications</p>
                     ) : (
                       notifications.map((n) => (
-                        <div key={n.id} className="flex items-start gap-3 px-4 py-3 bg-neutral-50/50">
+                        <div
+                          key={n.id}
+                          className={`flex items-start gap-3 px-4 py-3 ${
+                            n.read ? "bg-transparent" : "bg-neutral-100/80"
+                          }`}
+                        >
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200">
                             <svg className="h-4 w-4 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-neutral-900">{n.message}</p>
+                            <p className={`text-sm ${n.read ? "font-normal text-neutral-700" : "font-semibold text-neutral-900"}`}>
+                              {n.message}
+                            </p>
                             {n.createdAt && (
                               <p className="mt-0.5 text-xs text-neutral-500">{formatNotificationTime(n.createdAt)}</p>
                             )}
                           </div>
+                          {!n.read && (
+                            <span
+                              aria-label="Unread"
+                              className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-500"
+                            />
+                          )}
                         </div>
                       ))
                     )}
