@@ -19,11 +19,21 @@ type StatusBucket = { pending: number; approved: number; declined: number };
 
 const EMPTY = (): StatusBucket => ({ pending: 0, approved: 0, declined: 0 });
 
+// Counts the *current* status of an application. Still useful for the
+// per-reason breakdown where the latest outcome is what matters.
 const bumpStatus = (bucket: StatusBucket, status: string | null | undefined) => {
   const s = String(status ?? "").toUpperCase();
   if (s === "APPROVED" || s === "SIGNED_UP") bucket.approved += 1;
   else if (s === "DECLINED") bucket.declined += 1;
   else bucket.pending += 1;
+};
+
+// Counts only "still pending" — used by the totals/series where approved &
+// declined come from action logs (each transaction = one count).
+const bumpPending = (bucket: StatusBucket, status: string | null | undefined) => {
+  const s = String(status ?? "").toUpperCase();
+  const decided = s === "APPROVED" || s === "SIGNED_UP" || s === "DECLINED";
+  if (!decided) bucket.pending += 1;
 };
 
 const median = (nums: number[]): number | null => {
@@ -170,8 +180,16 @@ export async function GET(request: NextRequest) {
     ]);
 
     // ── Totals (in range) ──
+    // Approved / Declined now count every admin decision (transaction), so an
+    // account approved twice after re-edits contributes 2 approvals. Pending
+    // still reflects the count of applications in the range that have no
+    // decision yet.
     const totals = { ...EMPTY(), all: applications.length };
-    for (const a of applications) bumpStatus(totals, a.status);
+    for (const a of applications) bumpPending(totals, a.status);
+    for (const l of logs) {
+      if (l.action === "APPLICATION_APPROVED") totals.approved += 1;
+      else if (l.action === "APPLICATION_DECLINED") totals.declined += 1;
+    }
     const decided = totals.approved + totals.declined;
     const approvalRate = decided ? totals.approved / decided : 0;
 
@@ -239,11 +257,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Pending bars are plotted against the date each application was created
+    // (so "March had 12 pending" means 12 were filed in March and haven't been
+    // decided yet). Approved / declined bars are plotted against the date
+    // each decision *action* occurred.
     for (const a of applications) {
       const key = getBucketKey(new Date(a.createdAt), bucket);
       const row = series.find((s) => s.key === key);
       if (!row) continue;
-      bumpStatus(row, a.status);
+      bumpPending(row, a.status);
+    }
+    for (const l of logs) {
+      if (l.action !== "APPLICATION_APPROVED" && l.action !== "APPLICATION_DECLINED")
+        continue;
+      const key = getBucketKey(new Date(l.createdAt), bucket);
+      const row = series.find((s) => s.key === key);
+      if (!row) continue;
+      if (l.action === "APPLICATION_APPROVED") row.approved += 1;
+      else row.declined += 1;
     }
 
     // ── Approval rate by update reason ──

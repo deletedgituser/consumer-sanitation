@@ -127,6 +127,13 @@ export default function VerifyCustomerPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [reviewMobileNumber, setReviewMobileNumber] = useState("");
   const [reviewMobileTouched, setReviewMobileTouched] = useState(false);
+  // ── Demo OTP verification (prototype only — no real SMS API) ──
+  const [otpGenerated, setOtpGenerated] = useState("");
+  const [otpInput, setOtpInput] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpResendCooldown, setOtpResendCooldown] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [applicationFromDb, setApplicationFromDb] = useState<Record<string, unknown> | null>(null);
@@ -230,7 +237,62 @@ export default function VerifyCustomerPage() {
     if (!isValidMobileNumber(trimmed)) return "Enter a valid mobile number.";
     return "";
   }, [reviewMobileNumber]);
-  const canSubmitReview = !isSubmitting && !reviewMobileError;
+  const canSubmitReview = !isSubmitting && !reviewMobileError && otpVerified;
+
+  // Centralised reset so every exit point from the Review modal leaves the OTP
+  // flow in a clean state (no stale codes, no verified badge for a new number).
+  const resetOtpState = () => {
+    setOtpGenerated("");
+    setOtpInput("");
+    setOtpSent(false);
+    setOtpVerified(false);
+    setOtpError(null);
+    setOtpResendCooldown(0);
+  };
+
+  const sendDemoOtp = () => {
+    if (reviewMobileError) {
+      setReviewMobileTouched(true);
+      return;
+    }
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    setOtpGenerated(code);
+    setOtpSent(true);
+    setOtpVerified(false);
+    setOtpInput("");
+    setOtpError(null);
+    setOtpResendCooldown(30);
+    toast.success(`Demo OTP sent. Your code is ${code}`);
+  };
+
+  const verifyDemoOtp = () => {
+    const entered = otpInput.trim();
+    if (entered.length !== 6) {
+      setOtpError("Please enter the 6-digit code.");
+      return;
+    }
+    if (entered === otpGenerated) {
+      setOtpVerified(true);
+      setOtpError(null);
+      toast.success("Mobile number verified.");
+    } else {
+      setOtpError("Incorrect code. Please try again.");
+    }
+  };
+
+  const resendDemoOtp = () => {
+    if (otpResendCooldown > 0) return;
+    sendDemoOtp();
+  };
+
+  useEffect(() => {
+    if (otpResendCooldown <= 0) return;
+    const t = window.setTimeout(
+      () => setOtpResendCooldown((c) => Math.max(0, c - 1)),
+      1000,
+    );
+    return () => window.clearTimeout(t);
+  }, [otpResendCooldown]);
 
   const fieldLabels: Record<(typeof formFieldsForCompare)[number], string> = {
     area: "Area",
@@ -300,6 +362,7 @@ export default function VerifyCustomerPage() {
 
     setReviewMobileNumber("");
     setReviewMobileTouched(false);
+    resetOtpState();
     setLastChangeSummary(buildChangeSummary());
     setSubmitError(null);
     setShowConfirmation(true);
@@ -382,6 +445,7 @@ export default function VerifyCustomerPage() {
       setIsEditing(false);
       setReviewMobileNumber("");
       setReviewMobileTouched(false);
+      resetOtpState();
 
       const notifMessage = updateReasonLabel
         ? `Your changes have been submitted and are pending review. Request: ${updateReasonLabel}.`
@@ -420,6 +484,11 @@ export default function VerifyCustomerPage() {
     const next = digitsOnly(e.target.value).slice(0, 12);
     setReviewMobileTouched(true);
     setReviewMobileNumber(next);
+    // If the user edits their number after we've already sent/verified an
+    // OTP, invalidate the previous code so the new number is re-verified.
+    if (otpSent || otpVerified) {
+      resetOtpState();
+    }
   };
 
   const updateDateIso = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -1248,6 +1317,7 @@ export default function VerifyCustomerPage() {
                     setSubmitError(null);
                     setReviewMobileNumber("");
                     setReviewMobileTouched(false);
+                    resetOtpState();
                     setIsEditing(true);
                   }}
                   className="w-full rounded-xl border border-neutral-200/80 bg-white py-3 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-50"
@@ -1255,11 +1325,23 @@ export default function VerifyCustomerPage() {
                   Add more changes
                 </button>
                 <div className="w-full rounded-xl border border-neutral-200/80 bg-white p-4 text-left">
-                  <label className="block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">
-                    Active mobile number
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">
+                      Active mobile number
+                    </label>
+                    {otpVerified ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Verified
+                      </span>
+                    ) : null}
+                  </div>
                   <p id="review-mobile-help" className="mt-2 text-xs text-neutral-500">
-                    Please enter an active mobile number.
+                    {otpVerified
+                      ? "This number has been verified via OTP."
+                      : "Please enter an active mobile number — we'll send you a one-time code to verify it."}
                   </p>
                   <input
                     type="tel"
@@ -1270,10 +1352,13 @@ export default function VerifyCustomerPage() {
                     inputMode="numeric"
                     autoComplete="off"
                     maxLength={12}
+                    readOnly={otpVerified}
                     className={`mt-3 w-full rounded-xl border px-3.5 py-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 ${
                       reviewMobileTouched && reviewMobileError
                         ? "border-red-300 focus:border-red-500 focus:ring-red-100"
-                        : "border-neutral-300 focus:border-neutral-900 focus:ring-neutral-300"
+                        : otpVerified
+                          ? "border-emerald-200 bg-emerald-50/40 text-emerald-900"
+                          : "border-neutral-300 focus:border-neutral-900 focus:ring-neutral-300"
                     }`}
                     aria-invalid={reviewMobileTouched && Boolean(reviewMobileError)}
                     aria-describedby="review-mobile-help review-mobile-error"
@@ -1285,6 +1370,94 @@ export default function VerifyCustomerPage() {
                   ) : (
                     <span id="review-mobile-error" className="sr-only" />
                   )}
+
+                  {/* ── OTP verification block (demo / prototype) ── */}
+                  {!otpVerified && !otpSent ? (
+                    <button
+                      type="button"
+                      onClick={sendDemoOtp}
+                      disabled={Boolean(reviewMobileError)}
+                      className="mt-3 w-full rounded-xl border border-neutral-900 bg-white py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-neutral-900 transition-colors hover:bg-neutral-900 hover:text-white disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400 disabled:hover:bg-white disabled:hover:text-neutral-400"
+                    >
+                      Send verification code
+                    </button>
+                  ) : null}
+
+                  {otpSent && !otpVerified ? (
+                    <div className="mt-3 space-y-3">
+                      {/* Demo banner — surfaces the generated code since this
+                          is a prototype with no SMS gateway. Replace this
+                          block with a real SMS send when wiring up the API. */}
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-800">
+                          Demo mode · no SMS sent
+                        </p>
+                        <p className="mt-1 text-xs text-amber-900">
+                          Your one-time code is{" "}
+                          <span className="font-mono text-sm font-bold tracking-[0.3em] text-amber-950">
+                            {otpGenerated}
+                          </span>
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium uppercase tracking-[0.08em] text-neutral-500">
+                          Enter 6-digit code
+                        </label>
+                        <input
+                          type="text"
+                          value={otpInput}
+                          onChange={(e) => {
+                            const next = e.target.value.replace(/\D/g, "").slice(0, 6);
+                            setOtpInput(next);
+                            if (otpError) setOtpError(null);
+                          }}
+                          placeholder="••••••"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          className={`mt-2 w-full rounded-xl border px-3.5 py-3 text-center font-mono text-lg tracking-[0.5em] text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 ${
+                            otpError
+                              ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+                              : "border-neutral-300 focus:border-neutral-900 focus:ring-neutral-300"
+                          }`}
+                          aria-invalid={Boolean(otpError)}
+                        />
+                        {otpError ? (
+                          <p className="mt-2 text-xs text-red-600">{otpError}</p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={verifyDemoOtp}
+                          disabled={otpInput.length !== 6}
+                          className="flex-1 rounded-xl bg-neutral-900 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-white transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Verify
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resendDemoOtp}
+                          disabled={otpResendCooldown > 0}
+                          className="rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-xs font-semibold text-neutral-700 transition-colors hover:bg-neutral-50 disabled:cursor-not-allowed disabled:text-neutral-400"
+                        >
+                          {otpResendCooldown > 0 ? `Resend in ${otpResendCooldown}s` : "Resend"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {otpVerified ? (
+                    <button
+                      type="button"
+                      onClick={resetOtpState}
+                      className="mt-3 text-xs font-medium text-neutral-600 underline-offset-4 hover:text-neutral-900 hover:underline"
+                    >
+                      Change number
+                    </button>
+                  ) : null}
                 </div>
                 <button
                   type="button"

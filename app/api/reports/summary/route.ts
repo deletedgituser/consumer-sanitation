@@ -111,14 +111,18 @@ export async function GET(request: NextRequest) {
       ? startOfDay(new Date(fromParam))
       : startOfMonth(addMonths(to, -5)); // default: last 6 months
 
-    // Pull only what we need for performance
-    const applications = await prisma.application.findMany({
+    // Pull every approve/decline action in the range. Each ActivityLog row
+    // is one administrative transaction — an account that was approved,
+    // re-edited by the customer, and approved again contributes *two*
+    // approvals. Counts are therefore action-based, not status-based.
+    const actions = await prisma.activityLog.findMany({
       where: {
         createdAt: { gte: from, lte: to },
+        action: { in: ["APPLICATION_APPROVED", "APPLICATION_DECLINED"] },
       },
       select: {
         id: true,
-        status: true,
+        action: true,
         createdAt: true,
       },
     });
@@ -168,18 +172,18 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ── Fill buckets ──
-    for (const a of applications) {
-      const created = new Date(a.createdAt);
-      const dk = dayKey(created);
-      const wk = weekKey(created);
-      const mk = monthKey(created);
-      const status = String(a.status ?? "").toUpperCase();
-      const isApproved = status === "APPROVED" || status === "SIGNED_UP";
-      const isDeclined = status === "DECLINED";
+    // ── Fill buckets (one increment per action / transaction) ──
+    for (const a of actions) {
+      const occurred = new Date(a.createdAt);
+      const dk = dayKey(occurred);
+      const wk = weekKey(occurred);
+      const mk = monthKey(occurred);
+      const isApproved = a.action === "APPLICATION_APPROVED";
+      const isDeclined = a.action === "APPLICATION_DECLINED";
 
       const bump = (bucket: Omit<Row, "approvalRate"> | undefined) => {
         if (!bucket) return;
+        // Total = every decision action in the bucket (approved + declined).
         bucket.total += 1;
         if (isApproved) bucket.approved += 1;
         else if (isDeclined) bucket.declined += 1;
@@ -200,13 +204,12 @@ export async function GET(request: NextRequest) {
     const weekly = Array.from(weeklyMap.values()).sort(sortByStart).map(finalizeRate);
     const monthly = Array.from(monthlyMap.values()).sort(sortByStart).map(finalizeRate);
 
-    // ── Grand totals (for documentation / header figures) ──
-    const grand = applications.reduce(
+    // ── Grand totals (sum of every decision action in the range) ──
+    const grand = actions.reduce(
       (acc, a) => {
-        const s = String(a.status ?? "").toUpperCase();
         acc.total += 1;
-        if (s === "APPROVED" || s === "SIGNED_UP") acc.approved += 1;
-        else if (s === "DECLINED") acc.declined += 1;
+        if (a.action === "APPLICATION_APPROVED") acc.approved += 1;
+        else if (a.action === "APPLICATION_DECLINED") acc.declined += 1;
         return acc;
       },
       { total: 0, approved: 0, declined: 0 },
