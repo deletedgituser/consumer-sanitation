@@ -7,6 +7,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { mapFormToApi } from "@/lib/account-verification";
 import { getCustomerApplicationCategoryDisplay } from "@/lib/customer-application-category";
+import OverviewReport from "./reports/OverviewReport";
 
 type Customer = {
   id: string;
@@ -285,34 +286,56 @@ function CustomerDetail({
             </span>
           )}
           <span className={`text-sm ${isDark ? "text-[#FFF19B]" : textMuted}`}>Record #{customer.recordNumber}</span>
-          {isEditing && onRequestDone && onCancel ? (
-            <div className="flex items-center gap-2 rounded-lg px-3 py-2">
-              <button type="button" onClick={() => onRequestDone(draft)} className={doneBtnClass}>
-                Done
-              </button>
-              <button type="button" onClick={onCancel} className={cancelBtnClass}>
-                Cancel
-              </button>
-            </div>
-          ) : isPending && (onApprove || onDecline || onEdit) ? (
-            <div className="flex items-center gap-2 rounded-lg px-3 py-2">
-              {onEdit && (
-                <button type="button" onClick={onEdit} className={editBtnClass}>
-                  Edit
+          <div className="flex items-center gap-2 rounded-lg px-3 py-2">
+            {isEditing && onRequestDone && onCancel ? (
+              <>
+                <button type="button" onClick={() => onRequestDone(draft)} className={doneBtnClass}>
+                  Done
                 </button>
-              )}
-              {onApprove && (
-                <button type="button" onClick={onApprove} className={approveBtnClass}>
-                  Approve
+                <button type="button" onClick={onCancel} className={cancelBtnClass}>
+                  Cancel
                 </button>
-              )}
-              {onDecline && (
-                <button type="button" onClick={onDecline} className={declineBtnClass}>
-                  Decline
-                </button>
-              )}
-            </div>
-          ) : null}
+              </>
+            ) : (
+              <>
+                {isPending && onEdit && (
+                  <button type="button" onClick={onEdit} className={editBtnClass}>
+                    Edit
+                  </button>
+                )}
+                {isPending && onApprove && (
+                  <button type="button" onClick={onApprove} className={approveBtnClass}>
+                    Approve
+                  </button>
+                )}
+                {isPending && onDecline && (
+                  <button type="button" onClick={onDecline} className={declineBtnClass}>
+                    Decline
+                  </button>
+                )}
+                {customer.accountNumber ? (
+                  <Link
+                    href={`/admin/applications/${encodeURIComponent(customer.accountNumber)}/report`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-all duration-200 hover:bg-slate-50 active:scale-[0.98] dark:border-slate-500 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600"
+                    title="Open the printable detailed report for this application"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                    >
+                      <path d="M4 4a2 2 0 012-2h5.586A2 2 0 0113 2.586L16.414 6A2 2 0 0117 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm7 .414V7h2.586L11 4.414zM7 10a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm0 3a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1z" />
+                    </svg>
+                    Generate Report
+                  </Link>
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -941,7 +964,7 @@ function CustomerDetail({
   );
 }
 
-type NavId = "dashboard" | "pending" | "approved" | "declined" | "logs" | "statistics";
+type NavId = "dashboard" | "pending" | "approved" | "declined" | "logs" | "statistics" | "reports";
 type Theme = "light" | "dark";
 
 const normalizeStatus = (status: unknown) => String(status ?? "").trim().toLowerCase();
@@ -998,6 +1021,15 @@ const navItems: { id: NavId; label: string; icon: React.ReactNode }[] = [
     icon: (
       <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    ),
+  },
+  {
+    id: "reports",
+    label: "Reports",
+    icon: (
+      <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-6h13M9 17h13M9 17l-4-4m0 0l4-4m-4 4h13M3 7a2 2 0 012-2h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
       </svg>
     ),
   },
@@ -2285,7 +2317,7 @@ export default function AdminDashboardPage() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          <div className="mx-auto max-w-6xl">
+          <div className={`mx-auto ${activeNav === "reports" ? "max-w-none" : "max-w-6xl"}`}>
             {effectiveSelected ? (
               <div
                 className={`admin-animate-in rounded-2xl border p-4 shadow-sm sm:p-6 ${
@@ -2476,6 +2508,10 @@ export default function AdminDashboardPage() {
                     </table>
                   </div>
                 )}
+              </div>
+            ) : activeNav === "reports" ? (
+              <div className="admin-animate-in">
+                <OverviewReport embedded />
               </div>
             ) : (
               <div

@@ -1,0 +1,633 @@
+/* Per-Application Detailed Report
+ *
+ * Screen layout: centered A4-proportioned card on a soft grey backdrop.
+ * Print layout : exact A4 page with margins, no toolbar, auto-break sections.
+ */
+
+/* ─── Tokens ─────────────────────────────────────────────────── */
+.report-viewport {
+  --brand: #3d45aa;
+  --brand-700: #2f3688;
+  --accent: #f8843f;
+  --ink: #0f172a;
+  --ink-soft: #334155;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --line-soft: #eef2f7;
+  --card: #ffffff;
+  --bg: #f1f5f9;
+  --before-bg: #eff6ff;
+  --before-ink: #1e3a8a;
+  --after-bg: #ecfdf5;
+  --after-ink: #065f46;
+
+  background: var(--bg);
+  min-height: 100vh;
+  padding: 24px 16px 64px;
+  color: var(--ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Use :where() so the rule has zero specificity — class-based overrides
+ * (e.g. `.report-mono`) still win without needing !important. */
+.report-viewport :where(*) {
+  font-family: inherit;
+}
+
+/* ─── Toolbar ────────────────────────────────────────────────── */
+.report-toolbar {
+  max-width: 210mm;
+  margin: 0 auto 16px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.report-toolbar-title {
+  text-align: center;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.2px;
+}
+
+.report-toolbar-actions {
+  text-align: right;
+}
+
+.report-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.report-btn:hover {
+  background: #f8fafc;
+}
+
+.report-btn-ghost {
+  background: transparent;
+}
+
+.report-btn-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.report-btn-primary:hover {
+  background: var(--brand-700);
+  border-color: var(--brand-700);
+}
+
+/* ─── Loading / Error ────────────────────────────────────────── */
+.report-loading {
+  max-width: 210mm;
+  margin: 64px auto;
+  text-align: center;
+  color: var(--muted);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 40px 24px;
+}
+
+.report-error {
+  color: #b91c1c;
+  font-size: 12px;
+  margin-top: 8px;
+  word-break: break-word;
+}
+
+/* ─── A4 paper ───────────────────────────────────────────────── */
+.report-paper {
+  max-width: 210mm;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 20px 40px -24px rgba(15, 23, 42, 0.25),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+  padding: 20mm 18mm;
+  overflow: hidden;
+}
+
+.report-header-strip {
+  display: none;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 6px;
+  margin-bottom: 14px;
+}
+
+/* ─── Section ────────────────────────────────────────────────── */
+.report-section {
+  border-top: 1px solid var(--line-soft);
+  padding: 18px 0 4px;
+}
+
+.report-section:first-of-type,
+.report-header-card {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.report-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 12px;
+  letter-spacing: 0.2px;
+  border-left: 3px solid var(--brand);
+  padding-left: 10px;
+}
+
+.report-avoid-break {
+  page-break-inside: auto;
+}
+
+/* ─── Header card ────────────────────────────────────────────── */
+.report-header-card {
+  padding-bottom: 14px;
+  margin-bottom: 6px;
+}
+
+.report-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.report-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 10px;
+  letter-spacing: -0.2px;
+  color: var(--ink);
+}
+
+.report-kv {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.report-kv-k {
+  color: var(--muted);
+  min-width: 78px;
+}
+
+.report-kv-v {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.report-mono {
+  font-family: var(--font-geist-mono), "SFMono-Regular", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  letter-spacing: 0.3px;
+}
+
+.report-status-badge {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  white-space: nowrap;
+}
+
+.report-header-footer {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ─── Generic field / 2-column grid ──────────────────────────── */
+.report-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+
+.report-field {
+  min-width: 0;
+}
+
+.report-col-span-2 {
+  grid-column: 1 / -1;
+}
+
+.report-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.report-value {
+  font-size: 13px;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.report-muted {
+  color: var(--muted);
+}
+
+.report-capitalize {
+  text-transform: capitalize;
+}
+
+/* ─── Summary tiles ─────────────────────────────────────────── */
+.report-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-tile {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fbfcff;
+}
+
+.report-tile-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.report-tile-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.report-callout {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+  border-left: 3px solid var(--accent);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+/* ─── Timeline ──────────────────────────────────────────────── */
+.report-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 6px;
+  position: relative;
+}
+
+.report-timeline::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+.report-timeline-item {
+  position: relative;
+  padding: 6px 0 14px 28px;
+}
+
+.report-timeline-dot {
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px #fff;
+}
+
+.report-timeline-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.report-timeline-date {
+  font-size: 11.5px;
+  color: var(--muted);
+  min-width: 150px;
+}
+
+.report-timeline-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.report-timeline-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+/* ─── Change history diff table ─────────────────────────────── */
+.report-diff-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.report-diff-group {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  page-break-inside: avoid;
+}
+
+.report-diff-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.report-diff-badge {
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.4px;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.report-table thead th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: #fbfcff;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.report-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.report-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.report-td-label {
+  width: 28%;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.report-td-before {
+  width: 36%;
+  background: var(--before-bg);
+  color: var(--before-ink);
+}
+
+.report-td-after {
+  width: 36%;
+  background: var(--after-bg);
+  color: var(--after-ink);
+  font-weight: 600;
+}
+
+/* ─── Admin action cards ────────────────────────────────────── */
+.report-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.report-action-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fbfcff;
+  page-break-inside: avoid;
+}
+
+.report-action-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.report-action-title {
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  font-size: 12.5px;
+}
+
+.report-action-row {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+/* ─── Notifications ─────────────────────────────────────────── */
+.report-notif-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.report-notif {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  page-break-inside: avoid;
+}
+
+.report-notif-pill {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  min-width: 72px;
+  text-align: center;
+}
+
+.report-notif-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.report-notif-msg {
+  margin: 0 0 2px;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.report-notif-time {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ─── Footer ────────────────────────────────────────────────── */
+.report-footer {
+  margin-top: 20px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 10.5px;
+  color: var(--muted);
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
+/* ─── Responsive (screen) ───────────────────────────────────── */
+@media (max-width: 720px) {
+  .report-grid-2,
+  .report-tiles {
+    grid-template-columns: 1fr;
+  }
+  .report-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+  .report-toolbar-title {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+  .report-paper {
+    padding: 16px 14px;
+  }
+}
+
+/* ─── Print / PDF ───────────────────────────────────────────── */
+@page {
+  size: A4;
+  margin: 14mm 14mm 16mm;
+}
+
+@media print {
+  body,
+  html {
+    background: #fff !important;
+  }
+
+  .report-viewport {
+    background: #fff !important;
+    padding: 0 !important;
+  }
+
+  .report-toolbar {
+    display: none !important;
+  }
+
+  .report-paper {
+    max-width: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .report-header-strip {
+    display: block;
+  }
+
+  .report-section {
+    page-break-inside: avoid;
+  }
+
+  .report-section-title {
+    page-break-after: avoid;
+  }
+
+  .report-diff-group,
+  .report-action-card,
+  .report-notif,
+  .report-tile {
+    page-break-inside: avoid;
+  }
+
+  .report-btn {
+    display: none !important;
+  }
+
+  /* Avoid heavy shadows / saturated backgrounds on paper */
+  .report-tile,
+  .report-action-card {
+    background: #fff !important;
+  }
+
+  /* Ensure colored highlights still print */
+  .report-status-badge,
+  .report-notif-pill,
+  .report-td-before,
+  .report-td-after,
+  .report-diff-badge {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
