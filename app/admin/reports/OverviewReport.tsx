@@ -717,11 +717,7 @@ export default function OverviewReport({
             </span>
           ) : null}
         </div>
-        <div className="report-toolbar-actions">
-          <button type="button" onClick={() => window.print()} className="report-btn report-btn-primary">
-            Download PDF / Print
-          </button>
-        </div>
+        <div className="report-toolbar-actions" />
       </div>
 
       <div className="dash-grid">
