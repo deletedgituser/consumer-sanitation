@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { mapFormToApi } from "@/lib/account-verification";
 import { getCustomerApplicationCategoryDisplay } from "@/lib/customer-application-category";
 import OverviewReport from "./reports/OverviewReport";
+import SummaryReport from "./reports/SummaryReport";
 
 type Customer = {
   id: string;
@@ -964,7 +965,7 @@ function CustomerDetail({
   );
 }
 
-type NavId = "dashboard" | "pending" | "approved" | "declined" | "logs" | "statistics" | "reports";
+type NavId = "dashboard" | "pending" | "approved" | "declined" | "logs" | "statistics" | "reports" | "summary";
 type Theme = "light" | "dark";
 
 const normalizeStatus = (status: unknown) => String(status ?? "").trim().toLowerCase();
@@ -1030,6 +1031,15 @@ const navItems: { id: NavId; label: string; icon: React.ReactNode }[] = [
     icon: (
       <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-6h13M9 17h13M9 17l-4-4m0 0l4-4m-4 4h13M3 7a2 2 0 012-2h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+      </svg>
+    ),
+  },
+  {
+    id: "summary",
+    label: "Summary Report",
+    icon: (
+      <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9h6m-6 4h6m-6-8h.01" />
       </svg>
     ),
   },
@@ -2317,7 +2327,7 @@ export default function AdminDashboardPage() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          <div className={`mx-auto ${activeNav === "reports" ? "max-w-none" : "max-w-6xl"}`}>
+          <div className={`mx-auto ${activeNav === "reports" || activeNav === "summary" ? "max-w-none" : "max-w-6xl"}`}>
             {effectiveSelected ? (
               <div
                 className={`admin-animate-in rounded-2xl border p-4 shadow-sm sm:p-6 ${
@@ -2512,6 +2522,10 @@ export default function AdminDashboardPage() {
             ) : activeNav === "reports" ? (
               <div className="admin-animate-in">
                 <OverviewReport embedded />
+              </div>
+            ) : activeNav === "summary" ? (
+              <div className="admin-animate-in">
+                <SummaryReport embedded />
               </div>
             ) : (
               <div

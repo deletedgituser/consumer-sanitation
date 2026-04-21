@@ -1,0 +1,610 @@
+/* ─────────────────────────────────────────────────────────────
+   Application Status Summary Report — styles
+   Shared print rules come from ../applications/[accountNumber]/report/report.css
+   ───────────────────────────────────────────────────────────── */
+
+.sum-viewport {
+  --sum-ink: #0f172a;
+  --sum-ink-soft: #334155;
+  --sum-muted: #64748b;
+  --sum-line: #cbd5e1;
+  --sum-line-soft: #e2e8f0;
+  --sum-header: #1e3a8a;
+  --sum-header-text: #ffffff;
+  --sum-zebra: #f8fafc;
+  --sum-total-bg: #e2e8f0;
+  --sum-accent-green: #047857;
+  --sum-accent-amber: #92400e;
+  --sum-accent-red: #b91c1c;
+
+  width: 100%;
+  color: var(--sum-ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.sum-viewport :where(*) {
+  font-family: inherit;
+}
+
+/* Keep inheritance for numbers monospaced via specific class */
+.sum-mono {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Embedded mode — dashboard shell already supplies padding/bg */
+.sum-viewport-embedded {
+  background: transparent;
+  padding: 0;
+}
+
+/* Let the shared .report-toolbar span the full available width here
+   (the per-application report caps it at 210mm which looks tiny in the
+   admin shell). */
+.sum-viewport .report-toolbar {
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* ── Controls row (From / To date inputs) ─────────────────── */
+.sum-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 16px 20px;
+  background: #fff;
+  border: 1px solid var(--sum-line-soft);
+  border-radius: 14px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.sum-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sum-control-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--sum-muted);
+  text-transform: uppercase;
+}
+
+.sum-control-input {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--sum-line);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sum-ink);
+  background: #fff;
+  min-width: 180px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.sum-control-input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.sum-controls-spacer {
+  flex: 1;
+}
+
+.sum-controls-meta {
+  text-align: right;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--sum-muted);
+}
+
+.sum-controls-meta strong {
+  color: var(--sum-ink);
+  font-weight: 700;
+}
+
+/* ── Export-inclusion bar (Daily / Weekly / Monthly toggles) ─ */
+.sum-export-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  background: #fff;
+  border: 1px solid var(--sum-line-soft);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.sum-export-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--sum-muted);
+  text-transform: uppercase;
+}
+
+.sum-toggles {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.sum-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border: 1px solid var(--sum-line);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sum-muted);
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.sum-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sum-toggle-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sum-line);
+  background: #fff;
+  color: transparent;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.sum-toggle.is-on {
+  background: #eef2ff;
+  border-color: #818cf8;
+  color: #3d45aa;
+  box-shadow: 0 0 0 1px #818cf8 inset;
+}
+
+.sum-toggle.is-on .sum-toggle-check {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+
+.sum-toggle:hover {
+  border-color: #c7d2fe;
+  color: var(--sum-ink);
+}
+
+.sum-toggle.is-on:hover {
+  background: #e0e7ff;
+}
+
+.sum-export-hint {
+  font-size: 11px;
+  color: var(--sum-muted);
+  font-weight: 600;
+}
+
+.sum-export-spacer {
+  flex: 1;
+}
+
+.sum-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+/* ── Export dropdown button + menu ─────────────────────── */
+.sum-export-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.sum-export-btn-primary {
+  background: #0f172a;
+  color: #fff;
+  border-color: #0f172a;
+  padding-right: 14px;
+}
+
+.sum-export-btn-primary:hover {
+  background: #1e293b;
+  border-color: #1e293b;
+}
+
+.sum-export-btn-primary:active {
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.18);
+}
+
+.sum-export-caret {
+  font-size: 11px;
+  line-height: 1;
+  margin-left: 2px;
+  transition: transform 160ms ease;
+}
+
+.sum-export-menu-wrap.is-open .sum-export-caret {
+  transform: rotate(180deg);
+}
+
+.sum-export-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 260px;
+  background: #ffffff;
+  border: 1px solid var(--sum-line);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14),
+    0 2px 4px rgba(15, 23, 42, 0.06);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: sumExportMenuIn 140ms ease-out;
+}
+
+@keyframes sumExportMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sum-export-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--sum-ink);
+  transition: background 120ms ease;
+  width: 100%;
+}
+
+.sum-export-menu-item:hover,
+.sum-export-menu-item:focus-visible {
+  background: #f1f5f9;
+  outline: none;
+}
+
+.sum-export-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 15px;
+  color: #ffffff;
+  letter-spacing: 0.2px;
+  flex-shrink: 0;
+}
+
+.sum-export-menu-icon-word {
+  background: #2b579a;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+}
+
+.sum-export-menu-icon-pdf {
+  background: #d93025;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+}
+
+.sum-export-menu-icon-excel {
+  background: #107c41;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+}
+
+.sum-export-menu-text {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.sum-export-menu-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sum-ink);
+}
+
+.sum-export-menu-sub {
+  font-size: 11px;
+  color: var(--sum-muted);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* ── Document / A4 container ─────────────────────────────── */
+.sum-doc {
+  background: #fff;
+  border: 1px solid var(--sum-line-soft);
+  border-radius: 16px;
+  padding: 40px 48px 48px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  width: 100%;
+  margin: 0;
+}
+
+/* ── Title block ─────────────────────────────────────────── */
+.sum-title-block {
+  text-align: center;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--sum-line-soft);
+  margin-bottom: 28px;
+}
+
+.sum-title {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: var(--sum-ink);
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.sum-subtitle {
+  font-size: 11.5px;
+  color: var(--sum-muted);
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: left;
+}
+
+.sum-subtitle-k {
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--sum-muted);
+}
+
+.sum-subtitle-v {
+  color: var(--sum-ink);
+  font-weight: 600;
+}
+
+/* ── Section (one per table) ─────────────────────────────── */
+.sum-section {
+  margin-top: 28px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.sum-section:first-of-type {
+  margin-top: 0;
+}
+
+.sum-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+
+.sum-section-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--sum-ink);
+  letter-spacing: 0.3px;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.sum-section-title span {
+  margin-right: 10px;
+  color: var(--sum-muted);
+  font-weight: 700;
+}
+
+.sum-section-sub {
+  font-size: 11px;
+  color: var(--sum-muted);
+  font-weight: 600;
+}
+
+/* ── Table ───────────────────────────────────────────────── */
+.sum-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--sum-line);
+  table-layout: fixed;
+  font-size: 12.5px;
+}
+
+.sum-table thead th {
+  background: var(--sum-header);
+  color: var(--sum-header-text);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sum-table thead th:first-child {
+  text-align: left;
+}
+
+.sum-table tbody td {
+  padding: 9px 12px;
+  border-top: 1px solid var(--sum-line-soft);
+  font-size: 12.5px;
+  color: var(--sum-ink-soft);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.sum-table tbody td:first-child {
+  text-align: left;
+  color: var(--sum-ink);
+  font-weight: 600;
+}
+
+.sum-table tbody tr:nth-child(even) td {
+  background: var(--sum-zebra);
+}
+
+.sum-table tbody tr:hover td {
+  background: #eef2ff;
+}
+
+/* TOTAL row */
+.sum-table tfoot td {
+  padding: 11px 12px;
+  background: var(--sum-total-bg);
+  color: var(--sum-ink);
+  font-weight: 800;
+  font-size: 12.5px;
+  text-align: center;
+  border-top: 2px solid var(--sum-line);
+  letter-spacing: 0.3px;
+}
+
+.sum-table tfoot td:first-child {
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+/* Approval-rate coloring (print-safe) */
+.sum-rate-high {
+  color: var(--sum-accent-green);
+  font-weight: 700;
+}
+
+.sum-rate-mid {
+  color: var(--sum-accent-amber);
+  font-weight: 700;
+}
+
+.sum-rate-low {
+  color: var(--sum-accent-red);
+  font-weight: 700;
+}
+
+.sum-rate-idle {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+/* Empty (no-activity) rows — keep numbers visible but muted */
+.sum-table tbody tr.sum-row-empty td {
+  color: #94a3b8;
+}
+
+.sum-table tbody tr.sum-row-empty td:first-child {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.sum-empty-note {
+  text-align: center;
+  padding: 28px 0;
+  color: var(--sum-muted);
+  font-size: 12px;
+  font-style: italic;
+  background: var(--sum-zebra);
+}
+
+/* Legend below last table */
+.sum-legend {
+  margin-top: 18px;
+  padding: 10px 14px;
+  background: var(--sum-zebra);
+  border: 1px dashed var(--sum-line);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--sum-muted);
+  line-height: 1.5;
+}
+
+.sum-legend strong {
+  color: var(--sum-ink-soft);
+}
+
+/* ── Print rules (retained for the browser's Ctrl+P fallback) ──
+   Every export format now produces a downloadable file, but if a user
+   triggers a native print we still want a clean document layout. */
+@media print {
+  .sum-controls,
+  .sum-export-bar,
+  .report-toolbar {
+    display: none !important;
+  }
+
+  .sum-doc {
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    max-width: none;
+  }
+
+  .sum-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .sum-table thead th,
+  .sum-table tbody tr:nth-child(even) td,
+  .sum-table tfoot td {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

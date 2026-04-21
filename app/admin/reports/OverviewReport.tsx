@@ -356,11 +356,6 @@ const endOfDayLocal = (d: Date) => {
   x.setHours(23, 59, 59, 999);
   return x;
 };
-const addDaysLocal = (d: Date, n: number) => {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-};
 const isoDate = (d: Date) => {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -369,12 +364,6 @@ const sameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
-
-const defaultFromFor = (bucket: Bucket, to: Date) => {
-  if (bucket === "day") return startOfDayLocal(addDaysLocal(to, -29));
-  if (bucket === "week") return startOfDayLocal(addDaysLocal(to, -7 * 11));
-  return startOfDayLocal(new Date(to.getFullYear(), to.getMonth() - 5, 1));
-};
 
 // ─────────────────────────────────────────────────────────────
 // RangeCalendar — mini month-grid range picker
@@ -551,21 +540,40 @@ export default function OverviewReport({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Range + bucket state ─────────────────────────────────
-  const [bucket, setBucket] = useState<Bucket>("month");
-  // `from`/`to` null ⇒ use bucket default on the server.
+  // ── Range state ──────────────────────────────────────────
+  // Bucket is fixed to "month"; the calendar/date inputs drive the range.
+  const bucket: Bucket = "month";
+  // `from`/`to` null ⇒ server uses its default window on first load.
   const [from, setFrom] = useState<Date | null>(null);
   const [to, setTo] = useState<Date | null>(null);
 
-  // When switching bucket, auto-snap the range to that bucket's default.
-  const handleBucketChange = (next: Bucket) => {
-    if (next === bucket) return;
-    setBucket(next);
-    const now = new Date();
-    const nextTo = endOfDayLocal(now);
-    const nextFrom = defaultFromFor(next, nextTo);
-    setFrom(nextFrom);
-    setTo(nextTo);
+  // Handle direct edits to the two <input type="date"> fields.
+  const handleDateInputChange = (which: "from" | "to", value: string) => {
+    if (!value) return;
+    const parts = value.split("-").map((n) => Number.parseInt(n, 10));
+    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return;
+    const [y, m, d] = parts;
+    const picked = new Date(y, m - 1, d);
+    if (Number.isNaN(picked.getTime())) return;
+
+    if (which === "from") {
+      const nextFrom = startOfDayLocal(picked);
+      // If the new start is past the current end, collapse to a 1-day range.
+      if (to && nextFrom > to) {
+        setFrom(nextFrom);
+        setTo(endOfDayLocal(picked));
+      } else {
+        setFrom(nextFrom);
+      }
+    } else {
+      const nextTo = endOfDayLocal(picked);
+      if (from && nextTo < from) {
+        setFrom(startOfDayLocal(picked));
+        setTo(nextTo);
+      } else {
+        setTo(nextTo);
+      }
+    }
   };
 
   useEffect(() => {
@@ -725,7 +733,7 @@ export default function OverviewReport({
           <div className="dash-kpis">
             <div className="dash-kpi dash-kpi-orange">
               <div className="dash-kpi-top">
-                <span className="dash-kpi-label">TOTAL APPLICATIONS</span>
+                <span className="dash-kpi-label">THIS MONTH TOTAL APPLICATION</span>
                 <span className="dash-kpi-chip">
                   <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden>
                     <path d="M10 4l5 6h-3v6H8v-6H5l5-6z" fill="currentColor" />
@@ -1067,30 +1075,28 @@ export default function OverviewReport({
             </div>
             <div className="dash-side-range">
               <div className="dash-side-range-label">DATASET RANGE</div>
-              <div className="dash-side-range-value">
-                {fmtDate(data.range.from)}
-              </div>
+              <input
+                type="date"
+                className="dash-side-range-input"
+                value={from ? isoDate(from) : ""}
+                max={to ? isoDate(to) : isoDate(new Date())}
+                onChange={(e) => handleDateInputChange("from", e.target.value)}
+                aria-label="Start date"
+              />
               <div className="dash-side-range-arrow">▼</div>
-              <div className="dash-side-range-value">
-                {fmtDate(data.range.to)}
-              </div>
+              <input
+                type="date"
+                className="dash-side-range-input"
+                value={to ? isoDate(to) : ""}
+                min={from ? isoDate(from) : undefined}
+                max={isoDate(new Date())}
+                onChange={(e) => handleDateInputChange("to", e.target.value)}
+                aria-label="End date"
+              />
             </div>
 
-            {/* Bucket pills */}
-            <div className="dash-bucket-pills print:hidden" role="tablist" aria-label="Time bucket">
-              {(["day", "week", "month"] as Bucket[]).map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  role="tab"
-                  aria-selected={bucket === b}
-                  className={`dash-bucket-pill ${bucket === b ? "is-active" : ""}`}
-                  onClick={() => handleBucketChange(b)}
-                >
-                  {b === "day" ? "Days" : b === "week" ? "Weeks" : "Months"}
-                </button>
-              ))}
-            </div>
+            {/* Select-date header */}
+            <div className="dash-select-date-label print:hidden">SELECT DATE</div>
 
             {/* Range calendar */}
             <div className="print:hidden">
