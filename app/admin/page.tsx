@@ -1019,10 +1019,10 @@ const navItems: { id: NavId; label: string; icon: React.ReactNode }[] = [
   },
   {
     id: "reports",
-    label: "Reports",
+    label: "Insights",
     icon: (
       <svg className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-6h13M9 17h13M9 17l-4-4m0 0l4-4m-4 4h13M3 7a2 2 0 012-2h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
       </svg>
     ),
   },

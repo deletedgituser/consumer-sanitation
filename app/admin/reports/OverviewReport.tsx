@@ -540,6 +540,46 @@ export default function OverviewReport({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Ticket activity counters, fetched independently from the overview.
+  const [ticketStats, setTicketStats] = useState<{
+    total: number;
+    open: number;
+    inReview: number;
+    resolved: number;
+    closed: number;
+  }>({ total: 0, open: 0, inReview: 0, resolved: 0, closed: 0 });
+  const [ticketLoading, setTicketLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setTicketLoading(true);
+        const res = await fetch("/api/tickets?limit=500", { cache: "no-store" });
+        if (!res.ok) throw new Error("bad response");
+        const list: { status: "OPEN" | "IN_REVIEW" | "RESOLVED" | "CLOSED" }[] =
+          await res.json();
+        if (cancelled) return;
+        const acc = { total: 0, open: 0, inReview: 0, resolved: 0, closed: 0 };
+        for (const t of list) {
+          acc.total += 1;
+          if (t.status === "OPEN") acc.open += 1;
+          else if (t.status === "IN_REVIEW") acc.inReview += 1;
+          else if (t.status === "RESOLVED") acc.resolved += 1;
+          else if (t.status === "CLOSED") acc.closed += 1;
+        }
+        setTicketStats(acc);
+      } catch {
+        // Non-fatal — leave the row showing zeros.
+      } finally {
+        if (!cancelled) setTicketLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ── Range state ──────────────────────────────────────────
   // Bucket is fixed to "month"; the calendar/date inputs drive the range.
   const bucket: Bucket = "month";
@@ -721,7 +761,7 @@ export default function OverviewReport({
           <span />
         )}
         <div className="report-toolbar-title">
-          System Overview Report
+          System Overview Insights
           {loading ? (
             <span className="dash-refreshing" aria-live="polite">
               <span className="dash-refreshing-dot" aria-hidden />
@@ -797,6 +837,76 @@ export default function OverviewReport({
               <div className="dash-kpi-sub">awaiting decision</div>
             </div>
           </div>
+
+          {/* ── Row: Ticket Activity ───────────────────────── */}
+          <section className="dash-card">
+            <header className="dash-card-head">
+              <h3 className="dash-card-title">Ticket Activity</h3>
+              <span className="dash-card-sub">
+                {ticketLoading
+                  ? "loading…"
+                  : `${ticketStats.total} ticket${ticketStats.total === 1 ? "" : "s"} total`}
+              </span>
+            </header>
+            <div className="ticket-stats-grid">
+              <TicketStatCard
+                label="TOTAL"
+                value={ticketStats.total}
+                tone="neutral"
+                icon={
+                  <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden>
+                    <path
+                      d="M4 6h12v2a2 2 0 0 0 0 4v2H4v-2a2 2 0 0 0 0-4V6z"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      fill="none"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                }
+              />
+              <TicketStatCard
+                label="OPEN"
+                value={ticketStats.open}
+                tone="amber"
+                icon={
+                  <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden>
+                    <circle cx="10" cy="10" r="6" stroke="currentColor" strokeWidth="1.8" fill="none" />
+                  </svg>
+                }
+              />
+              <TicketStatCard
+                label="IN REVIEW"
+                value={ticketStats.inReview}
+                tone="blue"
+                icon={
+                  <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden>
+                    <path d="M3 10h14M10 3v14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                }
+              />
+              <TicketStatCard
+                label="RESOLVED"
+                value={ticketStats.resolved}
+                tone="green"
+                icon={
+                  <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden>
+                    <path d="M4 11l4 4 8-8" stroke="currentColor" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                }
+              />
+              <TicketStatCard
+                label="CLOSED"
+                value={ticketStats.closed}
+                tone="slate"
+                icon={
+                  <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden>
+                    <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                }
+              />
+            </div>
+          </section>
 
           {/* ── Row: donut breakdown + monthly bars ── */}
           <div className="dash-row dash-row-2">
@@ -1172,6 +1282,84 @@ export default function OverviewReport({
           </div>
         </aside>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Small KPI-style card for ticket counters
+// ─────────────────────────────────────────────────────────────
+function TicketStatCard({
+  label,
+  value,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: number;
+  tone: "neutral" | "amber" | "blue" | "green" | "slate";
+  icon: React.ReactNode;
+}) {
+  const palette: Record<
+    typeof tone,
+    { bg: string; border: string; text: string; chipBg: string; chipText: string }
+  > = {
+    neutral: {
+      bg: "#f9f7f1",
+      border: "#e5e0d3",
+      text: "#2b2b2b",
+      chipBg: "#ffffff",
+      chipText: "#2b2b2b",
+    },
+    amber: {
+      bg: "#fef6e6",
+      border: "#f2d493",
+      text: "#8a5a00",
+      chipBg: "#fdebc2",
+      chipText: "#8a5a00",
+    },
+    blue: {
+      bg: "#eaf2ff",
+      border: "#c3d6f7",
+      text: "#1e40af",
+      chipBg: "#d7e3fb",
+      chipText: "#1e40af",
+    },
+    green: {
+      bg: "#e9f7ee",
+      border: "#b7e0c5",
+      text: "#1e7a3f",
+      chipBg: "#d0ecd9",
+      chipText: "#1e7a3f",
+    },
+    slate: {
+      bg: "#eef1f5",
+      border: "#cfd5de",
+      text: "#3d4754",
+      chipBg: "#dde2e9",
+      chipText: "#3d4754",
+    },
+  };
+  const c = palette[tone];
+  return (
+    <div
+      className="ticket-stat"
+      style={{
+        background: c.bg,
+        border: `1px solid ${c.border}`,
+        color: c.text,
+      }}
+    >
+      <div className="ticket-stat-top">
+        <span className="ticket-stat-label">{label}</span>
+        <span
+          className="ticket-stat-chip"
+          style={{ background: c.chipBg, color: c.chipText }}
+        >
+          {icon}
+        </span>
+      </div>
+      <div className="ticket-stat-value">{value}</div>
     </div>
   );
 }
