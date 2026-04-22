@@ -103,6 +103,11 @@ function SummaryTable({
   rows,
   rangeNote,
   emptyMessage,
+  // Column labels adapt to the active dataset (applications vs tickets).
+  totalLabel = "Total Applicants",
+  positiveLabel = "Approved",
+  negativeLabel = "Declined",
+  rateLabel = "Approval Rate",
 }: {
   sectionNumber: number;
   sectionTitle: string;
@@ -110,6 +115,10 @@ function SummaryTable({
   rows: SummaryRow[];
   rangeNote: string;
   emptyMessage: string;
+  totalLabel?: string;
+  positiveLabel?: string;
+  negativeLabel?: string;
+  rateLabel?: string;
 }) {
   const totals = rows.reduce(
     (acc, r) => {
@@ -136,10 +145,10 @@ function SummaryTable({
         <thead>
           <tr>
             <th scope="col">{firstColHeader}</th>
-            <th scope="col">Total Applicants</th>
-            <th scope="col">Approved</th>
-            <th scope="col">Declined</th>
-            <th scope="col">Approval Rate</th>
+            <th scope="col">{totalLabel}</th>
+            <th scope="col">{positiveLabel}</th>
+            <th scope="col">{negativeLabel}</th>
+            <th scope="col">{rateLabel}</th>
           </tr>
         </thead>
 
@@ -211,6 +220,46 @@ export default function SummaryReport({
   type Scope = "daily" | "weekly" | "monthly";
   const [scope, setScope] = useState<Scope>("monthly");
 
+  // Which dataset the tables are built from.
+  type Dataset = "applications" | "tickets";
+  const [dataset, setDataset] = useState<Dataset>("applications");
+
+  // Dataset-specific labels used by the table + exports. Tickets re-use
+  // the approved/declined columns as resolved/closed so we don't need a
+  // second table component.
+  const datasetMeta =
+    dataset === "tickets"
+      ? {
+          reportTitle: "Support Ticket Summary Report",
+          docTitle: "Support Ticket Summary Report",
+          totalLabel: "Total Tickets",
+          positiveLabel: "Resolved",
+          negativeLabel: "Closed",
+          rateLabel: "Resolution Rate",
+          grandLabel: "tickets",
+          grandExtra: (approved: number, declined: number, rate: string) =>
+            `Resolved ${approved} · Closed ${declined} · ${rate} resolution rate`,
+          legend:
+            "Formula: Resolution Rate = (Resolved ÷ Total Tickets) × 100. Total Tickets includes every ticket submitted within the row's time window — including those still open or in review. Rows are sorted chronologically; a TOTAL footer consolidates the entire section.",
+          exportFileSlug: "support-ticket-summary",
+          exportHeading: "SUPPORT TICKET SUMMARY REPORT",
+        }
+      : {
+          reportTitle: "Application Status Summary Report",
+          docTitle: "Application Status Summary Report",
+          totalLabel: "Total Applicants",
+          positiveLabel: "Approved",
+          negativeLabel: "Declined",
+          rateLabel: "Approval Rate",
+          grandLabel: "applicants",
+          grandExtra: (approved: number, declined: number, rate: string) =>
+            `Approved ${approved} · Declined ${declined} · ${rate} approval rate`,
+          legend:
+            "Formula: Approval Rate = (Approved ÷ Total Applicants) × 100. Total Applicants includes every application created within the row's time window — including those still pending. Rows are sorted chronologically; a TOTAL footer consolidates the entire section.",
+          exportFileSlug: "application-status-summary",
+          exportHeading: "APPLICATION STATUS SUMMARY REPORT",
+        };
+
   // Export dropdown (Word / PDF / Excel).
   const [exportOpen, setExportOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
@@ -247,10 +296,13 @@ export default function SummaryReport({
         const params = new URLSearchParams();
         params.set("from", isoDate(from));
         params.set("to", isoDate(to));
-        const res = await fetch(
-          `/api/reports/summary?${params.toString()}`,
-          { cache: "no-store" },
-        );
+        const endpoint =
+          dataset === "tickets"
+            ? "/api/reports/summary/tickets"
+            : "/api/reports/summary";
+        const res = await fetch(`${endpoint}?${params.toString()}`, {
+          cache: "no-store",
+        });
         if (!res.ok) {
           const text = await res.text().catch(() => "");
           throw new Error(text || `Failed to load summary (${res.status})`);
@@ -268,7 +320,7 @@ export default function SummaryReport({
     return () => {
       cancelled = true;
     };
-  }, [from, to]);
+  }, [from, to, dataset]);
 
   const handleDateChange = (which: "from" | "to", value: string) => {
     if (!value) return;
@@ -382,10 +434,10 @@ export default function SummaryReport({
           <thead>
             <tr>
               <th style="background:#1e3a8a;color:#ffffff;padding:10px 12px;text-align:left;border:1px solid #1e3a8a;font-size:10pt;letter-spacing:0.6px;text-transform:uppercase;">${htmlEscape(s.firstCol)}</th>
-              <th style="background:#1e3a8a;color:#ffffff;padding:10px 12px;text-align:center;border:1px solid #1e3a8a;font-size:10pt;letter-spacing:0.6px;text-transform:uppercase;">Total Applicants</th>
-              <th style="background:#1e3a8a;color:#ffffff;padding:10px 12px;text-align:center;border:1px solid #1e3a8a;font-size:10pt;letter-spacing:0.6px;text-transform:uppercase;">Approved</th>
-              <th style="background:#1e3a8a;color:#ffffff;padding:10px 12px;text-align:center;border:1px solid #1e3a8a;font-size:10pt;letter-spacing:0.6px;text-transform:uppercase;">Declined</th>
-              <th style="background:#1e3a8a;color:#ffffff;padding:10px 12px;text-align:center;border:1px solid #1e3a8a;font-size:10pt;letter-spacing:0.6px;text-transform:uppercase;">Approval Rate</th>
+              <th style="background:#1e3a8a;color:#ffffff;padding:10px 12px;text-align:center;border:1px solid #1e3a8a;font-size:10pt;letter-spacing:0.6px;text-transform:uppercase;">${htmlEscape(datasetMeta.totalLabel)}</th>
+              <th style="background:#1e3a8a;color:#ffffff;padding:10px 12px;text-align:center;border:1px solid #1e3a8a;font-size:10pt;letter-spacing:0.6px;text-transform:uppercase;">${htmlEscape(datasetMeta.positiveLabel)}</th>
+              <th style="background:#1e3a8a;color:#ffffff;padding:10px 12px;text-align:center;border:1px solid #1e3a8a;font-size:10pt;letter-spacing:0.6px;text-transform:uppercase;">${htmlEscape(datasetMeta.negativeLabel)}</th>
+              <th style="background:#1e3a8a;color:#ffffff;padding:10px 12px;text-align:center;border:1px solid #1e3a8a;font-size:10pt;letter-spacing:0.6px;text-transform:uppercase;">${htmlEscape(datasetMeta.rateLabel)}</th>
             </tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
@@ -418,7 +470,7 @@ export default function SummaryReport({
 <head>
   <meta charset="utf-8" />
   <meta name="ProgId" content="Excel.Sheet" />
-  <title>Application Status Summary Report</title>
+  <title>${htmlEscape(datasetMeta.docTitle)}</title>
   <style>
     body { font-family: Calibri, Arial, sans-serif; color: #0f172a; padding: 24px; }
     h1 { font-size: 20pt; text-align: center; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.6px; }
@@ -427,7 +479,7 @@ export default function SummaryReport({
   </style>
 </head>
 <body>
-  <h1>Application Status Summary Report</h1>
+  <h1>${htmlEscape(datasetMeta.docTitle)}</h1>
   <p class="meta">
     <strong>Date Range:</strong> ${htmlEscape(fmtDateLong(data.range.from))} — ${htmlEscape(fmtDateLong(data.range.to))}
     <br/>
@@ -435,10 +487,7 @@ export default function SummaryReport({
     ${preparedBy}
   </p>
   ${sections.map(renderSection).join("")}
-  <p class="legend">
-    <strong>Formula:</strong> Approval Rate = (Approved &#247; Total Applicants) &#215; 100.
-    <strong>Total Applicants</strong> includes every application created within the row's time window &mdash; including those still pending.
-  </p>
+  <p class="legend">${htmlEscape(datasetMeta.legend)}</p>
 </body>
 </html>`;
   };
@@ -462,7 +511,7 @@ export default function SummaryReport({
     });
     downloadBlob(
       blob,
-      `application-status-summary_${isoDate(new Date())}.doc`,
+      `${datasetMeta.exportFileSlug}_${isoDate(new Date())}.doc`,
     );
   };
 
@@ -474,7 +523,7 @@ export default function SummaryReport({
     });
     downloadBlob(
       blob,
-      `application-status-summary_${isoDate(new Date())}.xls`,
+      `${datasetMeta.exportFileSlug}_${isoDate(new Date())}.xls`,
     );
   };
 
@@ -507,7 +556,7 @@ export default function SummaryReport({
     doc.setFontSize(16);
     doc.setTextColor(15, 23, 42);
     doc.text(
-      "APPLICATION STATUS SUMMARY REPORT",
+      datasetMeta.exportHeading,
       pageWidth / 2,
       margin + 4,
       { align: "center" },
@@ -573,10 +622,10 @@ export default function SummaryReport({
       head: [
         [
           section.firstCol,
-          "Total Applicants",
-          "Approved",
-          "Declined",
-          "Approval Rate",
+          datasetMeta.totalLabel,
+          datasetMeta.positiveLabel,
+          datasetMeta.negativeLabel,
+          datasetMeta.rateLabel,
         ],
       ],
       body,
@@ -641,14 +690,10 @@ export default function SummaryReport({
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(100, 116, 139);
-    const legend =
-      "Formula: Approval Rate = (Approved / Total Applicants) × 100. " +
-      "Total Applicants includes every application created within the row's time window, " +
-      "including those still pending. Rows are sorted chronologically.";
-    const wrapped = doc.splitTextToSize(legend, pageWidth - margin * 2);
+    const wrapped = doc.splitTextToSize(datasetMeta.legend, pageWidth - margin * 2);
     doc.text(wrapped, margin, legendY);
 
-    doc.save(`application-status-summary_${isoDate(new Date())}.pdf`);
+    doc.save(`${datasetMeta.exportFileSlug}_${isoDate(new Date())}.pdf`);
   };
 
   const sectionNotes = useMemo(() => {
@@ -720,7 +765,7 @@ export default function SummaryReport({
           <span />
         )}
         <div className="report-toolbar-title">
-          Application Status Summary Report
+          {datasetMeta.reportTitle}
           {loading ? (
             <span className="dash-refreshing" aria-live="polite">
               <span className="dash-refreshing-dot" aria-hidden />
@@ -764,19 +809,55 @@ export default function SummaryReport({
         <div className="sum-controls-meta">
           <div>
             <strong>Grand Total:</strong>{" "}
-            {fmtInt(data.grandTotal.total)} applicants
+            {fmtInt(data.grandTotal.total)} {datasetMeta.grandLabel}
           </div>
           <div>
-            Approved {fmtInt(data.grandTotal.approved)} · Declined{" "}
-            {fmtInt(data.grandTotal.declined)} ·{" "}
-            {fmtPercent(data.grandTotal.approvalRate, 1)} approval rate
+            {datasetMeta.grandExtra(
+              data.grandTotal.approved,
+              data.grandTotal.declined,
+              fmtPercent(data.grandTotal.approvalRate, 1),
+            )}
           </div>
         </div>
       </div>
 
-      {/* Scope selector + multi-format export dropdown */}
+      {/* Dataset + Scope selector + multi-format export dropdown */}
       <div className="sum-export-bar print:hidden">
-        <span className="sum-export-label">Report</span>
+        <span className="sum-export-label">Dataset</span>
+
+        <div
+          className="sum-toggles"
+          role="radiogroup"
+          aria-label="Report dataset"
+        >
+          {(
+            [
+              { key: "applications", label: "Application request" },
+              { key: "tickets", label: "Ticket request" },
+            ] as const
+          ).map(({ key, label }) => {
+            const active = dataset === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                className={`sum-toggle ${active ? "is-on" : ""}`}
+                onClick={() => setDataset(key)}
+              >
+                <span className="sum-toggle-check" aria-hidden>
+                  {active ? "✓" : ""}
+                </span>
+                <span className="sum-toggle-label">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <span className="sum-export-divider" aria-hidden />
+
+        <span className="sum-export-label">Scope</span>
 
         <div
           className="sum-toggles"
@@ -810,7 +891,12 @@ export default function SummaryReport({
         </div>
 
         <div className="sum-export-hint">
-          Exporting: <strong>{scope.charAt(0).toUpperCase() + scope.slice(1)}</strong> report
+          Exporting:{" "}
+          <strong>
+            {dataset === "tickets" ? "Ticket " : "Application "}
+            {scope.charAt(0).toUpperCase() + scope.slice(1)}
+          </strong>{" "}
+          report
         </div>
 
         <div className="sum-export-spacer" />
@@ -907,7 +993,7 @@ export default function SummaryReport({
       {/* Printable document */}
       <article className="sum-doc">
         <header className="sum-title-block">
-          <h1 className="sum-title">Application Status Summary Report</h1>
+          <h1 className="sum-title">{datasetMeta.docTitle}</h1>
 
           <div className="sum-subtitle">
             <span className="sum-subtitle-k">Date Range</span>
@@ -939,6 +1025,10 @@ export default function SummaryReport({
             rows={data.daily}
             rangeNote={sectionNotes.daily}
             emptyMessage="No daily activity in the selected range."
+            totalLabel={datasetMeta.totalLabel}
+            positiveLabel={datasetMeta.positiveLabel}
+            negativeLabel={datasetMeta.negativeLabel}
+            rateLabel={datasetMeta.rateLabel}
           />
         ) : null}
 
@@ -950,6 +1040,10 @@ export default function SummaryReport({
             rows={data.weekly}
             rangeNote={sectionNotes.weekly}
             emptyMessage="No weekly activity in the selected range."
+            totalLabel={datasetMeta.totalLabel}
+            positiveLabel={datasetMeta.positiveLabel}
+            negativeLabel={datasetMeta.negativeLabel}
+            rateLabel={datasetMeta.rateLabel}
           />
         ) : null}
 
@@ -961,17 +1055,14 @@ export default function SummaryReport({
             rows={data.monthly}
             rangeNote={sectionNotes.monthly}
             emptyMessage="No monthly activity in the selected range."
+            totalLabel={datasetMeta.totalLabel}
+            positiveLabel={datasetMeta.positiveLabel}
+            negativeLabel={datasetMeta.negativeLabel}
+            rateLabel={datasetMeta.rateLabel}
           />
         ) : null}
 
-        <p className="sum-legend">
-          <strong>Formula:</strong> Approval Rate = (Approved ÷ Total
-          Applicants) × 100. &nbsp;
-          <strong>Total Applicants</strong> includes every application created
-          within the row&rsquo;s time window — including those still pending.
-          Rows are sorted chronologically; a <strong>TOTAL</strong> footer
-          consolidates the entire section.
-        </p>
+        <p className="sum-legend">{datasetMeta.legend}</p>
       </article>
     </div>
   );
