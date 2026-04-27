@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 
 type TicketStatus = "OPEN" | "IN_REVIEW" | "RESOLVED" | "CLOSED";
@@ -23,6 +24,24 @@ type Ticket = {
   resolvedBy: { id: string; name: string | null; username: string } | null;
   createdAt: string;
   updatedAt: string;
+};
+
+type ApplicationDetails = Record<string, unknown> & {
+  accountNumber?: string | null;
+  recordNumber?: string | null;
+  firstName?: string | null;
+  middleName?: string | null;
+  lastName?: string | null;
+  suffixName?: string | null;
+  status?: string | null;
+  area?: string | null;
+  district?: string | null;
+  barangay?: string | null;
+  residenceAddress?: string | null;
+  cellphone?: string | null;
+  contactNumberForContacting?: string | null;
+  landline?: string | null;
+  email?: string | null;
 };
 
 const CATEGORY_LABEL: Record<TicketCategory, string> = {
@@ -74,6 +93,9 @@ export default function TicketsAdmin() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [details, setDetails] = useState<ApplicationDetails | null>(null);
 
   const fetchTickets = useCallback(async () => {
     setLoading(true);
@@ -117,31 +139,73 @@ export default function TicketsAdmin() {
     return acc;
   }, [tickets]);
 
-  const updateTicket = async (
-    id: string,
-    patch: { status?: TicketStatus; resolutionNote?: string | null }
-  ) => {
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/tickets/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error || "Failed to update ticket");
+  const updateTicket = useCallback(
+    async (
+      id: string,
+      patch: {
+        status?: TicketStatus;
+        resolutionNote?: string | null;
+        accountNumber?: string | null;
+      },
+      opts: { silent?: boolean } = {}
+    ): Promise<Ticket | null> => {
+      setSaving(true);
+      try {
+        const res = await fetch(`/api/tickets/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(data?.error || "Failed to update ticket");
+        }
+        const updated: Ticket = await res.json();
+        setTickets((prev) => prev.map((t) => (t.id === id ? updated : t)));
+        if (!opts.silent) toast.success("Ticket updated");
+        return updated;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Update failed";
+        toast.error(msg);
+        return null;
+      } finally {
+        setSaving(false);
       }
-      const updated: Ticket = await res.json();
-      setTickets((prev) => prev.map((t) => (t.id === id ? updated : t)));
-      toast.success("Ticket updated");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Update failed";
-      toast.error(msg);
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    []
+  );
+
+  const openCustomerRecord = useCallback(
+    async (ticket: Ticket) => {
+      if (!ticket.accountNumber) {
+        toast.error("Link an account number first.");
+        return;
+      }
+      if (ticket.status === "OPEN") {
+        await updateTicket(ticket.id, { status: "IN_REVIEW" }, { silent: true });
+      }
+      setDetailsModalOpen(true);
+      setDetailsLoading(true);
+      setDetails(null);
+      try {
+        const res = await fetch(
+          `/api/applications/${encodeURIComponent(ticket.accountNumber)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) {
+          const payload = await res.json().catch(() => null);
+          throw new Error(payload?.error || "Failed to load customer details");
+        }
+        const data = (await res.json()) as ApplicationDetails;
+        setDetails(data);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to load customer details");
+      } finally {
+        setDetailsLoading(false);
+      }
+    },
+    [updateTicket]
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -284,10 +348,25 @@ export default function TicketsAdmin() {
               ticket={selected}
               saving={saving}
               onUpdate={(patch) => updateTicket(selected.id, patch)}
+              onLinkAccount={(accountNumber) =>
+                updateTicket(selected.id, { accountNumber })
+              }
+              onOpenCustomer={() => openCustomerRecord(selected)}
             />
           )}
         </div>
       </div>
+
+      {detailsModalOpen && (
+        <CustomerDetailsModal
+          loading={detailsLoading}
+          details={details}
+          onClose={() => {
+            setDetailsModalOpen(false);
+            setDetails(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -296,6 +375,8 @@ function TicketDetail({
   ticket,
   saving,
   onUpdate,
+  onLinkAccount,
+  onOpenCustomer,
 }: {
   ticket: Ticket;
   saving: boolean;
@@ -303,6 +384,8 @@ function TicketDetail({
     status?: TicketStatus;
     resolutionNote?: string | null;
   }) => void;
+  onLinkAccount: (accountNumber: string) => Promise<Ticket | null>;
+  onOpenCustomer: () => void;
 }) {
   const [note, setNote] = useState(ticket.resolutionNote ?? "");
 
@@ -313,6 +396,8 @@ function TicketDetail({
   const isImage =
     ticket.attachmentUrl &&
     /\.(png|jpg|jpeg|webp|gif)$/i.test(ticket.attachmentUrl);
+
+  const phoneHref = `tel:${ticket.phoneNumber.replace(/\s+/g, "")}`;
 
   return (
     <div className="flex flex-col gap-5">
@@ -332,10 +417,55 @@ function TicketDetail({
         </div>
       </div>
 
+      {/* Quick actions: open customer record / link an account */}
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+        <div className="text-xs font-medium uppercase tracking-wide text-blue-900">
+          Action customer record
+        </div>
+        {ticket.accountNumber ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <p className="text-sm text-neutral-700">
+              Linked to account{" "}
+              <span className="font-mono font-semibold text-neutral-900">
+                {ticket.accountNumber}
+              </span>
+              .
+            </p>
+            <button
+              type="button"
+              onClick={onOpenCustomer}
+              disabled={saving}
+              className="ml-auto inline-flex items-center gap-2 rounded-lg bg-[#3D45AA] px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#2F367F] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              View Customer Details
+            </button>
+          </div>
+        ) : (
+          <ApplicationLookup
+            ticketName={ticket.name}
+            ticketPhone={ticket.phoneNumber}
+            saving={saving}
+            onLink={onLinkAccount}
+          />
+        )}
+      </div>
+
       {/* Core info */}
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
         <InfoRow label="Category" value={CATEGORY_LABEL[ticket.category]} />
-        <InfoRow label="Phone" value={ticket.phoneNumber} mono />
+        <div>
+          <dt className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+            Phone
+          </dt>
+          <dd className="mt-0.5 font-mono text-sm text-neutral-900">
+            <a className="hover:underline" href={phoneHref}>
+              {ticket.phoneNumber}
+            </a>
+          </dd>
+        </div>
         <InfoRow label="Address" value={ticket.address} fullSpan />
         <InfoRow label="Location / Landmark" value={ticket.location || "—"} />
         <InfoRow
@@ -462,6 +592,133 @@ function TicketDetail({
   );
 }
 
+function fmtValue(value: unknown): string {
+  if (value === null || typeof value === "undefined" || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) return value.length ? value.map((v) => String(v)).join(", ") : "—";
+  return String(value);
+}
+
+function CustomerDetailsModal({
+  loading,
+  details,
+  onClose,
+}: {
+  loading: boolean;
+  details: ApplicationDetails | null;
+  onClose: () => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const fullName = [details?.firstName, details?.middleName, details?.lastName, details?.suffixName]
+    .filter(Boolean)
+    .join(" ");
+  const coreFields: { label: string; value: unknown }[] = [
+    { label: "Full name", value: fullName || "—" },
+    { label: "Status", value: details?.status },
+    { label: "Account #", value: details?.accountNumber },
+    { label: "Record #", value: details?.recordNumber },
+    { label: "Area", value: details?.area },
+    { label: "District", value: details?.district },
+    { label: "Barangay", value: details?.barangay },
+    { label: "Residence address", value: details?.residenceAddress },
+    { label: "Cellphone", value: details?.cellphone },
+    { label: "Contact number", value: details?.contactNumberForContacting },
+    { label: "Landline", value: details?.landline },
+    { label: "Email", value: details?.email },
+  ];
+  const excluded = new Set([
+    "id",
+    "createdById",
+    "updatedById",
+    "createdBy",
+    "updatedBy",
+    "pendingDiff",
+  ]);
+  const extraFields =
+    details
+      ? Object.entries(details).filter(
+          ([key]) => !excluded.has(key) && !coreFields.some((f) => f.label.toLowerCase().replace(/[^a-z]/g, "") === key.toLowerCase().replace(/[^a-z]/g, ""))
+        )
+      : [];
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[120]">
+      <div
+        className="absolute inset-y-0 right-0 left-0 bg-black/35 backdrop-blur-md md:left-56"
+        onClick={onClose}
+      />
+      <div className="absolute inset-0 flex items-center justify-center p-4 md:p-6 md:pl-64">
+        <div
+          className="w-full max-w-4xl rounded-xl border border-neutral-200 bg-white p-5 shadow-2xl ring-1 ring-black/10 max-h-[calc(100vh-2rem)]"
+          onClick={(e) => e.stopPropagation()}
+        >
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-neutral-200 pb-3">
+          <h3 className="text-lg font-semibold text-neutral-900">Customer Details</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            Close
+          </button>
+        </div>
+
+          {loading ? (
+            <div className="flex min-h-[260px] items-center justify-center text-sm text-neutral-500">
+              Loading customer details...
+            </div>
+          ) : !details ? (
+            <div className="flex min-h-[260px] items-center justify-center text-sm text-neutral-500">
+              No customer details available.
+            </div>
+          ) : (
+            <div className="max-h-[calc(100vh-9rem)] space-y-5 overflow-y-auto pr-1">
+            <section>
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Primary Information
+              </h4>
+              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {coreFields.map((field) => (
+                  <div key={field.label} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                    <dt className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+                      {field.label}
+                    </dt>
+                    <dd className="mt-1 text-sm text-neutral-900">{fmtValue(field.value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+
+            <section>
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                All Stored Fields
+              </h4>
+              <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {extraFields.map(([key, value]) => (
+                  <div key={key} className="rounded-lg border border-neutral-200 p-3">
+                    <dt className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+                      {key}
+                    </dt>
+                    <dd className="mt-1 break-words text-sm text-neutral-900">{fmtValue(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function InfoRow({
   label,
   value,
@@ -485,6 +742,188 @@ function InfoRow({
       >
         {value}
       </dd>
+    </div>
+  );
+}
+
+type LookupApplication = {
+  id: string;
+  accountNumber: string | null;
+  recordNumber: string | null;
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+  cellphone: string | null;
+  landline: string | null;
+  contactNumberForContacting: string | null;
+  area: string | null;
+  barangay: string | null;
+};
+
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function digitsOnly(s: string): string {
+  return s.replace(/\D/g, "");
+}
+
+function ApplicationLookup({
+  ticketName,
+  ticketPhone,
+  saving,
+  onLink,
+}: {
+  ticketName: string;
+  ticketPhone: string;
+  saving: boolean;
+  onLink: (accountNumber: string) => Promise<unknown>;
+}) {
+  const [allApps, setAllApps] = useState<LookupApplication[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState(ticketName);
+  const [linking, setLinking] = useState<string | null>(null);
+
+  useEffect(() => {
+    setQuery(ticketName);
+  }, [ticketName]);
+
+  const ensureLoaded = useCallback(async () => {
+    if (allApps !== null) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/applications`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load applications");
+      const data = (await res.json()) as LookupApplication[];
+      setAllApps(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not load customer list");
+      setAllApps([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [allApps]);
+
+  const matches = useMemo(() => {
+    if (!allApps) return [];
+    const qName = normalize(query);
+    const qDigits = digitsOnly(query);
+    if (!qName && !qDigits) return [];
+    return allApps
+      .filter((a) => a.accountNumber)
+      .filter((a) => {
+        const fullName = normalize(
+          [a.firstName, a.middleName, a.lastName].filter(Boolean).join(" ")
+        );
+        if (qName && fullName.includes(qName)) return true;
+        if (qDigits) {
+          const phones = [
+            a.cellphone,
+            a.landline,
+            a.contactNumberForContacting,
+            a.accountNumber,
+          ]
+            .filter(Boolean)
+            .map((p) => digitsOnly(String(p)));
+          if (phones.some((p) => p.includes(qDigits))) return true;
+        }
+        return false;
+      })
+      .slice(0, 8);
+  }, [allApps, query]);
+
+  // Auto-suggest by ticket phone digits as well
+  const phoneDigits = useMemo(() => digitsOnly(ticketPhone), [ticketPhone]);
+  const phoneMatches = useMemo(() => {
+    if (!allApps || phoneDigits.length < 6) return [];
+    return allApps
+      .filter((a) => a.accountNumber)
+      .filter((a) =>
+        [a.cellphone, a.landline, a.contactNumberForContacting]
+          .filter(Boolean)
+          .some((p) => digitsOnly(String(p)).includes(phoneDigits))
+      )
+      .slice(0, 5);
+  }, [allApps, phoneDigits]);
+
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <p className="text-sm text-neutral-700">
+        No account number on this ticket. Find the customer&apos;s record to edit.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => void ensureLoaded()}
+          placeholder="Search by name or phone…"
+          className="min-w-[220px] flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
+        />
+        <button
+          type="button"
+          onClick={() => void ensureLoaded()}
+          disabled={loading}
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? "Loading…" : allApps ? "Refresh" : "Load list"}
+        </button>
+      </div>
+
+      {phoneMatches.length > 0 && query === ticketName && (
+        <p className="text-[11px] text-neutral-500">
+          Suggestions based on the ticket phone number:
+        </p>
+      )}
+
+      {(matches.length > 0 || phoneMatches.length > 0) && (
+        <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200 bg-white">
+          {(matches.length > 0 ? matches : phoneMatches).map((a) => {
+            const display =
+              [a.firstName, a.middleName, a.lastName]
+                .filter(Boolean)
+                .join(" ") || "(unnamed)";
+            const where = [a.area, a.barangay].filter(Boolean).join(", ");
+            return (
+              <li
+                key={a.id}
+                className="flex items-center justify-between gap-3 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-neutral-900">
+                    {display}
+                  </p>
+                  <p className="truncate text-[11px] text-neutral-500">
+                    <span className="font-mono">{a.accountNumber}</span>
+                    {where ? ` · ${where}` : ""}
+                    {a.cellphone ? ` · ${a.cellphone}` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving || linking === a.id}
+                  onClick={async () => {
+                    if (!a.accountNumber) return;
+                    setLinking(a.id);
+                    await onLink(a.accountNumber);
+                    setLinking(null);
+                  }}
+                  className="shrink-0 rounded-lg border border-[#3D45AA] bg-white px-3 py-1 text-xs font-medium text-[#3D45AA] shadow-sm hover:bg-[#3D45AA] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {linking === a.id ? "Linking…" : "Link to ticket"}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {allApps !== null && matches.length === 0 && phoneMatches.length === 0 && (
+        <p className="text-xs text-neutral-500">
+          No matching applications found.
+        </p>
+      )}
     </div>
   );
 }

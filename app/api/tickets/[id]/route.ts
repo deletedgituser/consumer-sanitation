@@ -51,6 +51,7 @@ export async function PATCH(
     const body = (await request.json()) as {
       status?: string;
       resolutionNote?: string | null;
+      accountNumber?: string | null;
     };
 
     const data: Record<string, unknown> = {};
@@ -72,6 +73,13 @@ export async function PATCH(
     }
     if (body.resolutionNote !== undefined) {
       data.resolutionNote = body.resolutionNote?.trim() || null;
+    }
+    if (body.accountNumber !== undefined) {
+      const next =
+        typeof body.accountNumber === "string"
+          ? body.accountNumber.trim()
+          : null;
+      data.accountNumber = next && next.length > 0 ? next : null;
     }
 
     if (Object.keys(data).length === 0) {

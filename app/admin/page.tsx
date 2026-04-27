@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { mapFormToApi } from "@/lib/account-verification";
 import { getCustomerApplicationCategoryDisplay } from "@/lib/customer-application-category";
 import OverviewReport from "./reports/OverviewReport";
@@ -124,11 +124,27 @@ function CustomerDetail({
     ? "w-full rounded border border-slate-500 bg-slate-700 text-white px-2 py-1.5 text-sm focus:border-[#FFF19B] focus:outline-none focus:ring-1 focus:ring-[#FFF19B]"
     : "w-full rounded border border-slate-300 bg-white text-slate-800 px-2 py-1.5 text-sm focus:border-[#3D45AA] focus:outline-none focus:ring-1 focus:ring-[#3D45AA]";
 
-  const [draft, setDraft] = useState<Customer>(customer);
+  const toBaselineCustomer = useMemo(() => {
+    if (!isPending || !customer.pendingDiff) return customer;
+    const baseline: Customer = { ...customer };
+    for (const [key, change] of Object.entries(customer.pendingDiff)) {
+      if (!change || typeof change.before === "undefined") continue;
+      const currentValue = (baseline as any)[key];
+      const beforeRaw = change.before;
+      if (typeof currentValue === "boolean") {
+        (baseline as any)[key] = String(beforeRaw) === "true";
+      } else {
+        (baseline as any)[key] = beforeRaw ?? "";
+      }
+    }
+    return baseline;
+  }, [customer, isPending]);
+
+  const [draft, setDraft] = useState<Customer>(toBaselineCustomer);
   // removed modal state; handled by parent
   useEffect(() => {
-    if (isEditing) setDraft(customer);
-  }, [isEditing, customer]);
+    if (isEditing) setDraft(toBaselineCustomer);
+  }, [isEditing, toBaselineCustomer]);
 
   const display = isEditing ? draft : customer;
   const setDisplay = setDraft;
@@ -1130,13 +1146,25 @@ function ApplicationsTable({
   );
 }
 
+type TicketContext = {
+  id: string;
+  name: string;
+  category: string;
+  message: string | null;
+  phoneNumber: string;
+};
+
 export default function AdminDashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [selected, setSelected] = useState<Customer | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeNav, setActiveNav] = useState<NavId>("dashboard");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [ticketContext, setTicketContext] = useState<TicketContext | null>(null);
+  const [resolveTicketOpen, setResolveTicketOpen] = useState(false);
+  const [resolveNote, setResolveNote] = useState("");
   const [theme, setTheme] = useState<Theme>("light");
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({});
   const [customerEdits, setCustomerEdits] = useState<Record<string, Customer>>({});
@@ -1400,6 +1428,76 @@ export default function AdminDashboardPage() {
       fetchApplications();
     }
   }, [status]);
+
+  // Handle deep-link from Tickets page: ?accountNumber=...&edit=1&ticketId=...
+  // Auto-loads the customer record, opens edit mode, and tracks ticket context
+  // so the admin can fix the customer's info without leaving the dashboard.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const acct = searchParams.get("accountNumber");
+    const edit = searchParams.get("edit") === "1";
+    const ticketId = searchParams.get("ticketId");
+    if (!acct) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const fresh = await fetchApplicationByAccount(acct);
+        if (cancelled || !fresh) {
+          if (!fresh) alert(`Customer with account ${acct} not found.`);
+          return;
+        }
+        setSelected(fresh);
+        const normalized = normalizeStatus(getEffectiveStatus(fresh));
+        if (normalized === "pending") setActiveNav("pending");
+        else if (normalized === "declined") setActiveNav("declined");
+        else if (
+          normalized === "approved" ||
+          normalized === "signed up" ||
+          normalized === "signed_up"
+        ) {
+          setActiveNav("approved");
+        } else {
+          setActiveNav("dashboard");
+        }
+        if (edit) setDetailEditMode(true);
+
+        if (ticketId) {
+          try {
+            const tRes = await fetch(`/api/tickets/${ticketId}`, {
+              cache: "no-store",
+            });
+            if (tRes.ok) {
+              const t = await tRes.json();
+              if (!cancelled) {
+                setTicketContext({
+                  id: t.id,
+                  name: t.name,
+                  category: t.category,
+                  message: t.message,
+                  phoneNumber: t.phoneNumber,
+                });
+              }
+            }
+          } catch {
+            /* non-fatal: banner just won't appear */
+          }
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.delete("accountNumber");
+        url.searchParams.delete("edit");
+        url.searchParams.delete("ticketId");
+        window.history.replaceState({}, "", url.toString());
+      } catch (err) {
+        console.error("[admin] failed to deep-link from ticket:", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, searchParams]);
 
   // Load theme from localStorage on mount; persist when changed
   useEffect(() => {
@@ -1798,9 +1896,47 @@ export default function AdminDashboardPage() {
       await fetchApplications();
       // Refresh logs after edit
       await fetchLogs();
+
+      if (ticketContext) {
+        const defaultNote = `Updated customer record for ${draft.firstName} ${draft.lastName} per phone call (Ticket #${ticketContext.id.slice(0, 8)}).`;
+        setResolveNote(defaultNote);
+        setResolveTicketOpen(true);
+      }
     } catch {
       alert("Failed to update application. Please try again.");
     }
+  };
+
+  const submitResolveTicket = async () => {
+    if (!ticketContext) {
+      setResolveTicketOpen(false);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/tickets/${ticketContext.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "RESOLVED",
+          resolutionNote: resolveNote.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to resolve ticket");
+      }
+      setTicketContext(null);
+      setResolveNote("");
+      setResolveTicketOpen(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to resolve ticket.");
+    }
+  };
+
+  const dismissTicketContext = () => {
+    setResolveTicketOpen(false);
+    setTicketContext(null);
+    setResolveNote("");
   };
 
   const handleView = async (c: Customer) => {
@@ -1944,6 +2080,70 @@ export default function AdminDashboardPage() {
                 className={theme === "dark" ? "rounded-lg bg-[#3D45AA] px-4 py-2 text-sm font-medium text-white hover:opacity-90" : "rounded-lg bg-[#3D45AA] px-4 py-2 text-sm font-medium text-white hover:opacity-90"}
               >
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resolveTicketOpen && ticketContext && (
+        <div className={modalOverlayClass} onClick={() => setResolveTicketOpen(false)}>
+          <div
+            className={
+              theme === "dark"
+                ? "rounded-xl border border-slate-600 bg-slate-800 p-6 shadow-xl max-w-lg w-full"
+                : "rounded-xl border border-slate-200 bg-white p-6 shadow-xl max-w-lg w-full"
+            }
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className={modalTitleClass}>Mark ticket as Resolved?</h3>
+            <p className={modalBodyClass}>
+              You just saved changes for{" "}
+              <strong>{ticketContext.name}</strong>. Should we close out
+              ticket{" "}
+              <span className="font-mono">
+                #{ticketContext.id.slice(0, 8)}
+              </span>{" "}
+              ({ticketContext.category.replace(/_/g, " ")})?
+            </p>
+            <label
+              className={
+                theme === "dark"
+                  ? "mt-4 block text-sm text-slate-200"
+                  : "mt-4 block text-sm text-slate-700"
+              }
+            >
+              Resolution note
+              <textarea
+                value={resolveNote}
+                onChange={(e) => setResolveNote(e.target.value)}
+                rows={3}
+                className={
+                  theme === "dark"
+                    ? "mt-1 w-full resize-none rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-slate-100 shadow-sm focus:border-[#FFF19B] focus:outline-none focus:ring-2 focus:ring-[#FFF19B]/20"
+                    : "mt-1 w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-[#3D45AA] focus:outline-none focus:ring-2 focus:ring-[#3D45AA]/20"
+                }
+                placeholder="Optional summary of what you fixed."
+              />
+            </label>
+            <div className={modalFooterClass}>
+              <button
+                type="button"
+                onClick={() => setResolveTicketOpen(false)}
+                className={
+                  theme === "dark"
+                    ? "rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600"
+                    : "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                }
+              >
+                Not yet
+              </button>
+              <button
+                type="button"
+                onClick={submitResolveTicket}
+                className="rounded-lg bg-[#16A34A] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                Mark Resolved
               </button>
             </div>
           </div>
@@ -2304,12 +2504,76 @@ export default function AdminDashboardPage() {
                   theme === "dark" ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-white"
                 }`}
               >
+                {ticketContext && (
+                  <div
+                    className={`mb-4 rounded-lg border-l-4 p-3 ${
+                      theme === "dark"
+                        ? "border-[#F8843F] bg-amber-950/40 text-amber-100"
+                        : "border-[#F8843F] bg-amber-50 text-amber-900"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide">
+                          Editing in response to support ticket
+                        </p>
+                        <p className="mt-1 text-sm">
+                          <span className="font-mono">
+                            #{ticketContext.id.slice(0, 8)}
+                          </span>{" "}
+                          · <strong>{ticketContext.name}</strong> ·{" "}
+                          {ticketContext.category.replace(/_/g, " ")}
+                          {ticketContext.message ? (
+                            <>
+                              {" "}
+                              ·{" "}
+                              <em className="opacity-90">
+                                &ldquo;{ticketContext.message}&rdquo;
+                              </em>
+                            </>
+                          ) : null}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`tel:${ticketContext.phoneNumber.replace(/\s+/g, "")}`}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium ${
+                            theme === "dark"
+                              ? "bg-slate-700 text-slate-100 hover:bg-slate-600"
+                              : "bg-white text-slate-700 hover:bg-slate-100"
+                          }`}
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h2.28a2 2 0 011.94 1.515l.7 2.8a2 2 0 01-.45 1.948L8.21 10.79a11.04 11.04 0 005 5l1.527-1.262a2 2 0 011.948-.45l2.8.7A2 2 0 0121 16.72V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                          {ticketContext.phoneNumber}
+                        </a>
+                        <button
+                          type="button"
+                          onClick={dismissTicketContext}
+                          className={`inline-flex items-center justify-center rounded-lg px-2 py-1 text-xs font-medium ${
+                            theme === "dark"
+                              ? "bg-slate-700 text-slate-200 hover:bg-slate-600"
+                              : "bg-white text-slate-600 hover:bg-slate-100"
+                          }`}
+                          aria-label="Dismiss ticket context"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <CustomerDetail
                   customer={effectiveSelected}
                   onBack={() => { setSelected(null); setDetailEditMode(false); }}
                   theme={theme}
                   isEditing={detailEditMode}
-                  onEdit={normalizeStatus(effectiveSelected.status) === "pending" ? () => setDetailEditMode(true) : undefined}
+                  onEdit={
+                    normalizeStatus(effectiveSelected.status) === "pending" || ticketContext
+                      ? () => setDetailEditMode(true)
+                      : undefined
+                  }
                   onRequestDone={handleDraftRequest}
                   onCancel={() => setDetailEditMode(false)}
                   onApprove={
