@@ -1049,23 +1049,12 @@ const navItems: { id: NavId; label: string; icon: React.ReactNode }[] = [
 function ApplicationsTable({
   customers,
   onView,
-  searchQuery,
   theme,
 }: {
   customers: Customer[];
   onView: (c: Customer) => void;
-  searchQuery: string;
   theme: Theme;
 }) {
-  const filtered = searchQuery.trim()
-    ? customers.filter(
-        (c) =>
-          `${c.firstName} ${c.lastName} ${c.recordNumber} ${c.area} ${c.barangay}`
-            .toLowerCase()
-            .includes(searchQuery.toLowerCase())
-      )
-    : customers;
-
   const thClass = theme === "dark" ? "px-4 py-3 font-semibold text-white" : "px-4 py-3 font-semibold text-slate-700";
   const tdClass = theme === "dark" ? "px-4 py-3 text-white" : "px-4 py-3 text-slate-800";
   const tdMutedClass = theme === "dark" ? "px-4 py-3 text-slate-200" : "px-4 py-3 text-slate-600";
@@ -1088,7 +1077,7 @@ function ApplicationsTable({
           </tr>
         </thead>
         <tbody>
-          {filtered.map((c) => (
+          {customers.map((c) => (
             <tr
               key={c.id}
               className={`border-b transition-all duration-200 ease-out hover:bg-[#FFF19B]/20 ${
@@ -1147,7 +1136,6 @@ export default function AdminDashboardPage() {
   const [selected, setSelected] = useState<Customer | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeNav, setActiveNav] = useState<NavId>("dashboard");
-  const [searchQuery, setSearchQuery] = useState("");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>("light");
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({});
@@ -2063,30 +2051,7 @@ export default function AdminDashboardPage() {
               </svg>
             </button>
           )}
-          <div className="flex flex-1 items-center gap-2">
-            <input
-              type="search"
-              placeholder="Search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`h-10 flex-1 max-w-md rounded-lg border px-3 text-sm transition-all duration-200 ease-out focus:outline-none focus:ring-2 ${
-                theme === "dark"
-                  ? "border-slate-600 bg-slate-700 text-slate-100 placeholder:text-slate-400 focus:border-[#FFF19B] focus:ring-[#FFF19B]/20"
-                  : "border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400 focus:border-[#3D45AA] focus:ring-[#3D45AA]/20"
-              }`}
-            />
-            <button
-              type="button"
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-[#F8843F] active:scale-95 ${
-                theme === "dark" ? "bg-[#FFF19B] text-slate-800" : "bg-[#3D45AA] text-white"
-              }`}
-              aria-label="Search"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </button>
-          </div>
+          <div className="flex-1" />
           <div className="flex items-center gap-2">
             <div className="relative" ref={notifMenuRef}>
               <button
@@ -2456,7 +2421,6 @@ export default function AdminDashboardPage() {
                   <ApplicationsTable
                     customers={listCustomers}
                     onView={handleView}
-                    searchQuery={searchQuery}
                     theme={theme}
                   />
                   {isLoadingApplications && (
