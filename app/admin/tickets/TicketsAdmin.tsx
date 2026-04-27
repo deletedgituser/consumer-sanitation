@@ -42,6 +42,64 @@ type ApplicationDetails = Record<string, unknown> & {
   contactNumberForContacting?: string | null;
   landline?: string | null;
   email?: string | null;
+  appType?: string | null;
+  membership?: string | null;
+  birthdate?: string | null;
+  gender?: string | null;
+  civilStatus?: string | null;
+  spouseFirst?: string | null;
+  spouseMiddle?: string | null;
+  spouseLast?: string | null;
+  spouseSuffix?: string | null;
+  spouseBirthdate?: string | null;
+  noMiddleName?: boolean | null;
+  cosignatory?: string | null;
+  witness?: string | null;
+  notes?: string | null;
+  orNumber?: string | null;
+  dateIssued?: string | null;
+  customerUpdateReason?: string | null;
+  activityLogs?: Array<{
+    id?: string;
+    action?: string;
+    userId?: string | null;
+    createdAt?: string;
+    metadata?: { source?: string; diff?: Record<string, { before?: string; after?: string }> } | null;
+  }>;
+};
+
+type EditableApplication = {
+  accountNumber: string;
+  recordNumber: string;
+  appType: string;
+  membership: string;
+  area: string;
+  district: string;
+  barangay: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  suffixName: string;
+  birthdate: string;
+  noMiddleName: boolean;
+  gender: string;
+  civilStatus: string;
+  spouseFirst: string;
+  spouseMiddle: string;
+  spouseLast: string;
+  spouseSuffix: string;
+  spouseBirthdate: string;
+  residenceAddress: string;
+  cellphone: string;
+  contactNumberForContacting: string;
+  landline: string;
+  email: string;
+  cosignatory: string;
+  witness: string;
+  status: string;
+  orNumber: string;
+  dateIssued: string;
+  notes: string;
 };
 
 const CATEGORY_LABEL: Record<TicketCategory, string> = {
@@ -86,6 +144,96 @@ function formatDate(iso: string | null | undefined): string {
   });
 }
 
+function toStr(v: unknown): string {
+  return typeof v === "string" ? v : v == null ? "" : String(v);
+}
+
+function computePendingDiff(
+  logs: ApplicationDetails["activityLogs"]
+): Record<string, { before: string; after: string }> | null {
+  if (!Array.isArray(logs) || logs.length === 0) return null;
+  const isCustomerLog = (l: NonNullable<ApplicationDetails["activityLogs"]>[number]) => {
+    const md = l?.metadata;
+    if (!md?.diff) return false;
+    if (md?.source === "customer") return true;
+    return !l?.userId;
+  };
+  const adminActionLog = logs.find(
+    (l) => l?.action === "APPLICATION_APPROVED" || l?.action === "APPLICATION_DECLINED"
+  );
+  const cutoffTs = adminActionLog?.createdAt
+    ? new Date(adminActionLog.createdAt).getTime()
+    : 0;
+  const latestCustomerLog = logs.find((l) => {
+    if (!isCustomerLog(l)) return false;
+    const logTs = l?.createdAt ? new Date(l.createdAt).getTime() : 0;
+    return logTs > cutoffTs;
+  });
+  const diff = latestCustomerLog?.metadata?.diff;
+  if (!diff || typeof diff !== "object") return null;
+  const cleaned: Record<string, { before: string; after: string }> = {};
+  for (const [key, val] of Object.entries(diff)) {
+    if (!val || typeof val !== "object") continue;
+    const before = String(val.before ?? "");
+    const after = String(val.after ?? "");
+    if (before === after) continue;
+    cleaned[key] = { before, after };
+  }
+  return Object.keys(cleaned).length > 0 ? cleaned : null;
+}
+
+function toBaselineApplication(app: ApplicationDetails): ApplicationDetails {
+  const diff = computePendingDiff(app.activityLogs);
+  if (!diff) return app;
+  const baseline: ApplicationDetails = { ...app };
+  for (const [key, change] of Object.entries(diff)) {
+    const current = (baseline as Record<string, unknown>)[key];
+    if (typeof current === "boolean") {
+      (baseline as Record<string, unknown>)[key] = String(change.before) === "true";
+    } else {
+      (baseline as Record<string, unknown>)[key] = change.before ?? "";
+    }
+  }
+  return baseline;
+}
+
+function toEditable(app: ApplicationDetails | null): EditableApplication | null {
+  if (!app) return null;
+  return {
+    accountNumber: toStr(app.accountNumber),
+    recordNumber: toStr(app.recordNumber),
+    appType: toStr(app.appType),
+    membership: toStr(app.membership),
+    area: toStr(app.area),
+    district: toStr(app.district),
+    barangay: toStr(app.barangay),
+    firstName: toStr(app.firstName),
+    middleName: toStr(app.middleName),
+    lastName: toStr(app.lastName),
+    suffixName: toStr(app.suffixName),
+    birthdate: toStr(app.birthdate),
+    noMiddleName: Boolean(app.noMiddleName),
+    gender: toStr(app.gender),
+    civilStatus: toStr(app.civilStatus),
+    spouseFirst: toStr(app.spouseFirst),
+    spouseMiddle: toStr(app.spouseMiddle),
+    spouseLast: toStr(app.spouseLast),
+    spouseSuffix: toStr(app.spouseSuffix),
+    spouseBirthdate: toStr(app.spouseBirthdate),
+    residenceAddress: toStr(app.residenceAddress),
+    cellphone: toStr(app.cellphone),
+    contactNumberForContacting: toStr(app.contactNumberForContacting),
+    landline: toStr(app.landline),
+    email: toStr(app.email),
+    cosignatory: toStr(app.cosignatory),
+    witness: toStr(app.witness),
+    status: toStr(app.status),
+    orNumber: toStr(app.orNumber),
+    dateIssued: toStr(app.dateIssued),
+    notes: toStr(app.notes),
+  };
+}
+
 export default function TicketsAdmin() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,6 +244,7 @@ export default function TicketsAdmin() {
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [details, setDetails] = useState<ApplicationDetails | null>(null);
+  const [detailsSaving, setDetailsSaving] = useState(false);
 
   const fetchTickets = useCallback(async () => {
     setLoading(true);
@@ -197,7 +346,7 @@ export default function TicketsAdmin() {
           throw new Error(payload?.error || "Failed to load customer details");
         }
         const data = (await res.json()) as ApplicationDetails;
-        setDetails(data);
+        setDetails(toBaselineApplication(data));
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to load customer details");
       } finally {
@@ -205,6 +354,43 @@ export default function TicketsAdmin() {
       }
     },
     [updateTicket]
+  );
+
+  const saveCustomerDetails = useCallback(
+    async (payload: EditableApplication) => {
+      if (!payload.accountNumber) {
+        toast.error("Missing account number.");
+        return false;
+      }
+      setDetailsSaving(true);
+      try {
+        const res = await fetch(
+          `/api/applications/${encodeURIComponent(payload.accountNumber)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "admin_edit",
+              ...payload,
+            }),
+          }
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          throw new Error(err?.details || err?.error || "Failed to save customer details");
+        }
+        const updated = (await res.json()) as ApplicationDetails;
+        setDetails(updated);
+        toast.success("Customer details updated.");
+        return true;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save customer details");
+        return false;
+      } finally {
+        setDetailsSaving(false);
+      }
+    },
+    []
   );
 
   return (
@@ -361,6 +547,8 @@ export default function TicketsAdmin() {
         <CustomerDetailsModal
           loading={detailsLoading}
           details={details}
+          saving={detailsSaving}
+          onSave={saveCustomerDetails}
           onClose={() => {
             setDetailsModalOpen(false);
             setDetails(null);
@@ -602,48 +790,36 @@ function fmtValue(value: unknown): string {
 function CustomerDetailsModal({
   loading,
   details,
+  saving,
+  onSave,
   onClose,
 }: {
   loading: boolean;
   details: ApplicationDetails | null;
+  saving: boolean;
+  onSave: (payload: EditableApplication) => Promise<boolean>;
   onClose: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [form, setForm] = useState<EditableApplication | null>(null);
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const fullName = [details?.firstName, details?.middleName, details?.lastName, details?.suffixName]
-    .filter(Boolean)
-    .join(" ");
-  const coreFields: { label: string; value: unknown }[] = [
-    { label: "Full name", value: fullName || "—" },
-    { label: "Status", value: details?.status },
-    { label: "Account #", value: details?.accountNumber },
-    { label: "Record #", value: details?.recordNumber },
-    { label: "Area", value: details?.area },
-    { label: "District", value: details?.district },
-    { label: "Barangay", value: details?.barangay },
-    { label: "Residence address", value: details?.residenceAddress },
-    { label: "Cellphone", value: details?.cellphone },
-    { label: "Contact number", value: details?.contactNumberForContacting },
-    { label: "Landline", value: details?.landline },
-    { label: "Email", value: details?.email },
-  ];
-  const excluded = new Set([
-    "id",
-    "createdById",
-    "updatedById",
-    "createdBy",
-    "updatedBy",
-    "pendingDiff",
-  ]);
-  const extraFields =
-    details
-      ? Object.entries(details).filter(
-          ([key]) => !excluded.has(key) && !coreFields.some((f) => f.label.toLowerCase().replace(/[^a-z]/g, "") === key.toLowerCase().replace(/[^a-z]/g, ""))
-        )
-      : [];
+  useEffect(() => {
+    setForm(toEditable(details));
+    setIsEditing(false);
+  }, [details]);
+
+  const setField = <K extends keyof EditableApplication>(key: K, value: EditableApplication[K]) => {
+    setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+  };
+
+  const readOnlyInput =
+    "mt-1 w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-900";
+  const editInput =
+    "mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10";
 
   if (!mounted) return null;
 
@@ -658,58 +834,210 @@ function CustomerDetailsModal({
           className="w-full max-w-4xl rounded-xl border border-neutral-200 bg-white p-5 shadow-2xl ring-1 ring-black/10 max-h-[calc(100vh-2rem)]"
           onClick={(e) => e.stopPropagation()}
         >
-        <div className="mb-4 flex items-center justify-between gap-3 border-b border-neutral-200 pb-3">
-          <h3 className="text-lg font-semibold text-neutral-900">Customer Details</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-          >
-            Close
-          </button>
-        </div>
+          <div className="mb-4 flex items-center justify-between gap-3 border-b border-neutral-200 pb-3">
+            <h3 className="text-lg font-semibold text-neutral-900">Customer Details</h3>
+            <div className="flex items-center gap-2">
+              {form && !isEditing && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="rounded-lg bg-[#3D45AA] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#2F367F]"
+                >
+                  Edit
+                </button>
+              )}
+              {form && isEditing && (
+                <>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={async () => {
+                      if (!form) return;
+                      const ok = await onSave(form);
+                      if (ok) setIsEditing(false);
+                    }}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => {
+                      setForm(toEditable(details));
+                      setIsEditing(false);
+                    }}
+                    className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
 
           {loading ? (
             <div className="flex min-h-[260px] items-center justify-center text-sm text-neutral-500">
               Loading customer details...
             </div>
-          ) : !details ? (
+          ) : !form ? (
             <div className="flex min-h-[260px] items-center justify-center text-sm text-neutral-500">
               No customer details available.
             </div>
           ) : (
             <div className="max-h-[calc(100vh-9rem)] space-y-5 overflow-y-auto pr-1">
-            <section>
-              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                Primary Information
-              </h4>
-              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {coreFields.map((field) => (
-                  <div key={field.label} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-                    <dt className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
-                      {field.label}
-                    </dt>
-                    <dd className="mt-1 text-sm text-neutral-900">{fmtValue(field.value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
+              <section>
+                <h4 className="mb-2 text-center text-base font-semibold text-neutral-900">Your information</h4>
+                <p className="mb-3 text-center text-xs text-neutral-500">
+                  Carefully review your data before submitting. You can edit fields as needed.
+                </p>
 
-            <section>
-              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                All Stored Fields
-              </h4>
-              <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {extraFields.map(([key, value]) => (
-                  <div key={key} className="rounded-lg border border-neutral-200 p-3">
-                    <dt className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
-                      {key}
-                    </dt>
-                    <dd className="mt-1 break-words text-sm text-neutral-900">{fmtValue(value)}</dd>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Account</label>
+                    <input value={form.accountNumber} disabled className={readOnlyInput} />
                   </div>
-                ))}
-              </dl>
-            </section>
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Application Type</label>
+                    <input
+                      value={form.appType}
+                      onChange={(e) => setField("appType", e.target.value)}
+                      disabled={!isEditing}
+                      className={isEditing ? editInput : readOnlyInput}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Membership Type</label>
+                    <input
+                      value={form.membership}
+                      onChange={(e) => setField("membership", e.target.value)}
+                      disabled={!isEditing}
+                      className={isEditing ? editInput : readOnlyInput}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Area</label>
+                    <input value={form.area} onChange={(e) => setField("area", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">District</label>
+                    <input value={form.district} onChange={(e) => setField("district", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Barangay</label>
+                    <input value={form.barangay} onChange={(e) => setField("barangay", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">First Name</label>
+                  <input value={form.firstName} onChange={(e) => setField("firstName", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Middle Name</label>
+                  <input value={form.middleName} onChange={(e) => setField("middleName", e.target.value)} disabled={!isEditing || form.noMiddleName} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Last Name</label>
+                  <input value={form.lastName} onChange={(e) => setField("lastName", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Suffix</label>
+                  <input value={form.suffixName} onChange={(e) => setField("suffixName", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Birthdate</label>
+                  <input value={form.birthdate} onChange={(e) => setField("birthdate", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Gender</label>
+                  <input value={form.gender} onChange={(e) => setField("gender", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Civil Status</label>
+                  <input value={form.civilStatus} onChange={(e) => setField("civilStatus", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+              </section>
+
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Spouse First</label>
+                  <input value={form.spouseFirst} onChange={(e) => setField("spouseFirst", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Spouse Middle</label>
+                  <input value={form.spouseMiddle} onChange={(e) => setField("spouseMiddle", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Spouse Last</label>
+                  <input value={form.spouseLast} onChange={(e) => setField("spouseLast", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Spouse Birthdate</label>
+                  <input value={form.spouseBirthdate} onChange={(e) => setField("spouseBirthdate", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Residence Address</label>
+                  <input value={form.residenceAddress} onChange={(e) => setField("residenceAddress", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+              </section>
+
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Cellphone</label>
+                  <input value={form.cellphone} onChange={(e) => setField("cellphone", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Landline</label>
+                  <input value={form.landline} onChange={(e) => setField("landline", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Email</label>
+                  <input value={form.email} onChange={(e) => setField("email", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Co-signatory</label>
+                  <input value={form.cosignatory} onChange={(e) => setField("cosignatory", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Witness</label>
+                  <input value={form.witness} onChange={(e) => setField("witness", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+              </section>
+
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Status</label>
+                  <input value={form.status} onChange={(e) => setField("status", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">OR Number</label>
+                  <input value={form.orNumber} onChange={(e) => setField("orNumber", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Date Issued</label>
+                  <input value={form.dateIssued} onChange={(e) => setField("dateIssued", e.target.value)} disabled={!isEditing} className={isEditing ? editInput : readOnlyInput} />
+                </div>
+                <div className="sm:col-span-3">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">Notes</label>
+                  <textarea
+                    value={form.notes}
+                    onChange={(e) => setField("notes", e.target.value)}
+                    disabled={!isEditing}
+                    rows={3}
+                    className={isEditing ? `${editInput} resize-none` : `${readOnlyInput} resize-none`}
+                  />
+                </div>
+              </section>
             </div>
           )}
         </div>

@@ -131,7 +131,8 @@ export async function PATCH(
 
     // Authentication is required for approve/decline, but optional for edits
     const session = await auth();
-    const isAdminAction = action === "approve" || action === "decline";
+    const isAdminAction =
+      action === "approve" || action === "decline" || action === "admin_edit";
 
     if (isAdminAction && !session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -171,6 +172,9 @@ export async function PATCH(
         approvedAt: null,
         declinedAt: null,
       };
+      logAction = "APPLICATION_UPDATED";
+    } else if (action === "admin_edit") {
+      statusUpdate = {};
       logAction = "APPLICATION_UPDATED";
     }
 
