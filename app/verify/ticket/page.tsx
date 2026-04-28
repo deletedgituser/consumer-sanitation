@@ -65,13 +65,13 @@ export default function RequestTicketPage() {
   }, [phone]);
 
   const messageLen = message.trim().length;
-  const MESSAGE_MAX = 10;
+  const MESSAGE_MIN = 10;
   const messageError =
     messageLen === 0
       ? ""
-      : messageLen > MESSAGE_MAX
-      ? `Notes must be ${MESSAGE_MAX} characters or less.`
-      : "";
+      : messageLen < MESSAGE_MIN
+        ? `Notes must be at least ${MESSAGE_MIN} characters.`
+        : "";
 
   const canSubmit =
     !submitting &&
@@ -79,8 +79,7 @@ export default function RequestTicketPage() {
     address.trim().length > 1 &&
     phone.trim().length > 0 &&
     !phoneError &&
-    messageLen > 0 &&
-    messageLen <= MESSAGE_MAX &&
+    messageLen >= MESSAGE_MIN &&
     !!file;
 
   const onPickFile = (f: File | null) => {
@@ -313,16 +312,18 @@ export default function RequestTicketPage() {
             <Field label="Additional notes" required error={messageError}>
               <textarea
                 value={message}
-                onChange={(e) => setMessage(e.target.value.slice(0, MESSAGE_MAX))}
-                placeholder={`Briefly describe your concern (max ${MESSAGE_MAX} characters)`}
-                rows={2}
-                maxLength={MESSAGE_MAX}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder={`Briefly describe your concern (at least ${MESSAGE_MIN} characters)`}
+                rows={4}
                 required
                 className="ts-input resize-none"
               />
-              <div className="mt-1 flex justify-end text-xs text-neutral-500">
-                <span className={messageLen > MESSAGE_MAX ? "text-red-600" : ""}>
-                  {messageLen}/{MESSAGE_MAX}
+              <div className="mt-1 flex justify-between text-xs text-neutral-500">
+                <span className={messageLen > 0 && messageLen < MESSAGE_MIN ? "text-amber-700" : ""}>
+                  Minimum {MESSAGE_MIN} characters
+                </span>
+                <span className={messageLen > 0 && messageLen < MESSAGE_MIN ? "text-red-600" : ""}>
+                  {messageLen}/{MESSAGE_MIN}
                 </span>
               </div>
             </Field>

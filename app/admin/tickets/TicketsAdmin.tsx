@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 
 type TicketStatus = "OPEN" | "IN_REVIEW" | "RESOLVED" | "CLOSED";
@@ -199,42 +200,50 @@ function toBaselineApplication(app: ApplicationDetails): ApplicationDetails {
 
 function toEditable(app: ApplicationDetails | null): EditableApplication | null {
   if (!app) return null;
+  const pick = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = (app as Record<string, unknown>)[k];
+      if (typeof v !== "undefined" && v !== null) return v;
+    }
+    return "";
+  };
   return {
-    accountNumber: toStr(app.accountNumber),
-    recordNumber: toStr(app.recordNumber),
-    appType: toStr(app.appType),
-    membership: toStr(app.membership),
-    area: toStr(app.area),
-    district: toStr(app.district),
-    barangay: toStr(app.barangay),
-    firstName: toStr(app.firstName),
-    middleName: toStr(app.middleName),
-    lastName: toStr(app.lastName),
-    suffixName: toStr(app.suffixName),
-    birthdate: toStr(app.birthdate),
-    noMiddleName: Boolean(app.noMiddleName),
-    gender: toStr(app.gender),
-    civilStatus: toStr(app.civilStatus),
-    spouseFirst: toStr(app.spouseFirst),
-    spouseMiddle: toStr(app.spouseMiddle),
-    spouseLast: toStr(app.spouseLast),
-    spouseSuffix: toStr(app.spouseSuffix),
-    spouseBirthdate: toStr(app.spouseBirthdate),
-    residenceAddress: toStr(app.residenceAddress),
-    cellphone: toStr(app.cellphone),
-    contactNumberForContacting: toStr(app.contactNumberForContacting),
-    landline: toStr(app.landline),
-    email: toStr(app.email),
-    cosignatory: toStr(app.cosignatory),
-    witness: toStr(app.witness),
-    status: toStr(app.status),
-    orNumber: toStr(app.orNumber),
-    dateIssued: toStr(app.dateIssued),
-    notes: toStr(app.notes),
+    accountNumber: toStr(pick("account_number", "accountNumber")),
+    recordNumber: toStr(pick("record_number", "recordNumber")),
+    appType: toStr(pick("app_type", "appType")),
+    membership: toStr(pick("membership")),
+    area: toStr(pick("area")),
+    district: toStr(pick("district")),
+    barangay: toStr(pick("barangay")),
+    firstName: toStr(pick("first_name", "firstName")),
+    middleName: toStr(pick("middle_name", "middleName")),
+    lastName: toStr(pick("last_name", "lastName")),
+    suffixName: toStr(pick("suffix_name", "suffixName")),
+    birthdate: toStr(pick("birthdate")),
+    noMiddleName: Boolean(pick("no_middle_name", "noMiddleName")),
+    gender: toStr(pick("gender")),
+    civilStatus: toStr(pick("civil_status", "civilStatus")),
+    spouseFirst: toStr(pick("spouse_first", "spouseFirst")),
+    spouseMiddle: toStr(pick("spouse_middle", "spouseMiddle")),
+    spouseLast: toStr(pick("spouse_last", "spouseLast")),
+    spouseSuffix: toStr(pick("spouse_suffix", "spouseSuffix")),
+    spouseBirthdate: toStr(pick("spouse_birthdate", "spouseBirthdate")),
+    residenceAddress: toStr(pick("residence_address", "residenceAddress")),
+    cellphone: toStr(pick("cellphone")),
+    contactNumberForContacting: toStr(pick("contact_number_for_contacting", "contactNumberForContacting")),
+    landline: toStr(pick("landline")),
+    email: toStr(pick("email")),
+    cosignatory: toStr(pick("cosignatory")),
+    witness: toStr(pick("witness")),
+    status: toStr(pick("status")),
+    orNumber: toStr(pick("or_number", "orNumber")),
+    dateIssued: toStr(pick("date_issued", "dateIssued")),
+    notes: toStr(pick("notes")),
   };
 }
 
 export default function TicketsAdmin() {
+  const { data: session } = useSession();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"ALL" | TicketStatus>("ALL");
@@ -333,27 +342,37 @@ export default function TicketsAdmin() {
       if (ticket.status === "OPEN") {
         await updateTicket(ticket.id, { status: "IN_REVIEW" }, { silent: true });
       }
+      const authToken = (session?.user as { apiToken?: string } | undefined)?.apiToken;
+      if (!authToken) {
+        toast.error("Admin API token missing. Please re-login.");
+        return;
+      }
       setDetailsModalOpen(true);
       setDetailsLoading(true);
       setDetails(null);
       try {
         const res = await fetch(
-          `/api/applications/${encodeURIComponent(ticket.accountNumber)}`,
-          { cache: "no-store" }
+          `/api/v1/accounts/${encodeURIComponent(ticket.accountNumber)}`,
+          {
+            cache: "no-store",
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          }
         );
         if (!res.ok) {
           const payload = await res.json().catch(() => null);
           throw new Error(payload?.error || "Failed to load customer details");
         }
         const data = (await res.json()) as ApplicationDetails;
-        setDetails(toBaselineApplication(data));
+        setDetails(data);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to load customer details");
       } finally {
         setDetailsLoading(false);
       }
     },
-    [updateTicket]
+    [session, updateTicket]
   );
 
   const saveCustomerDetails = useCallback(
@@ -362,16 +381,50 @@ export default function TicketsAdmin() {
         toast.error("Missing account number.");
         return false;
       }
+      const authToken = (session?.user as { apiToken?: string } | undefined)?.apiToken;
+      if (!authToken) {
+        toast.error("Admin API token missing. Please re-login.");
+        return false;
+      }
       setDetailsSaving(true);
       try {
         const res = await fetch(
-          `/api/applications/${encodeURIComponent(payload.accountNumber)}`,
+          `/api/v1/accounts/${encodeURIComponent(payload.accountNumber)}`,
           {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authToken}`,
+            },
             body: JSON.stringify({
-              action: "admin_edit",
-              ...payload,
+              app_type: payload.appType.toUpperCase(),
+              membership: payload.membership.toUpperCase(),
+              status: payload.status.toUpperCase(),
+              area: payload.area,
+              district: payload.district,
+              barangay: payload.barangay,
+              residence_address: payload.residenceAddress,
+              first_name: payload.firstName,
+              middle_name: payload.middleName,
+              last_name: payload.lastName,
+              suffix_name: payload.suffixName,
+              birthdate: payload.birthdate,
+              no_middle_name: payload.noMiddleName,
+              gender: payload.gender.toUpperCase(),
+              civil_status: payload.civilStatus,
+              spouse_first: payload.spouseFirst,
+              spouse_middle: payload.spouseMiddle,
+              spouse_last: payload.spouseLast,
+              spouse_suffix: payload.spouseSuffix,
+              spouse_birthdate: payload.spouseBirthdate,
+              cellphone: payload.cellphone,
+              landline: payload.landline,
+              email: payload.email,
+              cosignatory: payload.cosignatory,
+              witness: payload.witness,
+              notes: payload.notes,
+              or_number: payload.orNumber,
+              date_issued: payload.dateIssued,
             }),
           }
         );
@@ -390,7 +443,7 @@ export default function TicketsAdmin() {
         setDetailsSaving(false);
       }
     },
-    []
+    [session]
   );
 
   return (

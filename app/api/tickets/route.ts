@@ -44,7 +44,7 @@ async function saveAttachment(file: File): Promise<{ url: string; name: string }
 /**
  * POST /api/tickets — PUBLIC
  * Accepts multipart/form-data with: name, address, location, phoneNumber,
- * category, accountNumber (optional), message (optional), attachment (File).
+ * category, accountNumber (optional), message (required, min 10 chars), attachment (File).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -64,11 +64,17 @@ export async function POST(request: NextRequest) {
     const category = String(form.get("category") || "").trim();
     const accountNumber =
       String(form.get("accountNumber") || "").trim() || null;
-    const message = String(form.get("message") || "").trim() || null;
+    const message = String(form.get("message") || "").trim();
 
     if (!name || !address || !phoneNumber || !category) {
       return NextResponse.json(
         { error: "Name, address, phone number and category are required." },
+        { status: 400 }
+      );
+    }
+    if (message.length < 10) {
+      return NextResponse.json(
+        { error: "Additional notes must be at least 10 characters." },
         { status: 400 }
       );
     }
