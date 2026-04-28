@@ -29,10 +29,38 @@ const CATEGORY_OPTIONS: { value: TicketCategory; label: string; help: string }[]
 const MAX_FILE_BYTES = 8 * 1024 * 1024; // 8 MB
 const ACCEPTED_MIME = ["image/png", "image/jpeg", "image/jpg", "image/webp", "application/pdf"];
 
+const TICKET_STATUS_LABEL: Record<string, string> = {
+  OPEN: "Open",
+  IN_REVIEW: "In review",
+  RESOLVED: "Resolved",
+  CLOSED: "Closed",
+};
+
+const TICKET_CATEGORY_LABEL: Record<string, string> = {
+  ID_MISSPELLED: "ID misspelled",
+  NO_ID: "No ID",
+  ID_IN_4PS: "ID in 4Ps",
+  OTHER: "Other",
+};
+
+type TicketStatusPayload = {
+  id: string;
+  status: string;
+  category: string;
+  createdAt: string;
+  updatedAt: string;
+  resolutionNote: string | null;
+};
+
 export default function RequestTicketPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const accountNumber = searchParams.get("account")?.trim() ?? "";
+  const ticketIdParam = searchParams.get("ticketId")?.trim() ?? "";
+
+  const [linkedTicket, setLinkedTicket] = useState<TicketStatusPayload | null>(null);
+  const [linkedTicketLoading, setLinkedTicketLoading] = useState(false);
+  const [linkedTicketError, setLinkedTicketError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -121,6 +149,49 @@ export default function RequestTicketPage() {
     const t = setTimeout(() => setOtpCooldown((n) => Math.max(0, n - 1)), 1000);
     return () => clearTimeout(t);
   }, [otpCooldown]);
+
+  useEffect(() => {
+    if (!ticketIdParam || !accountNumber) {
+      setLinkedTicket(null);
+      setLinkedTicketError(null);
+      setLinkedTicketLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLinkedTicketLoading(true);
+    setLinkedTicketError(null);
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/tickets/status?ticketId=${encodeURIComponent(ticketIdParam)}&account=${encodeURIComponent(accountNumber)}`,
+          { cache: "no-store" },
+        );
+        const data = (await res.json().catch(() => null)) as
+          | TicketStatusPayload
+          | { error?: string }
+          | null;
+        if (cancelled) return;
+        if (!res.ok || !data || !("status" in data)) {
+          setLinkedTicket(null);
+          setLinkedTicketError(
+            (data && "error" in data && data.error) || "Could not load this ticket.",
+          );
+          return;
+        }
+        setLinkedTicket(data as TicketStatusPayload);
+      } catch {
+        if (!cancelled) {
+          setLinkedTicket(null);
+          setLinkedTicketError("Could not load this ticket.");
+        }
+      } finally {
+        if (!cancelled) setLinkedTicketLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ticketIdParam, accountNumber]);
 
   const openOtpModal = (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,6 +294,11 @@ export default function RequestTicketPage() {
     );
   }
 
+  const landingHref =
+    accountNumber !== ""
+      ? `/verify-customer/landing?account=${encodeURIComponent(accountNumber)}&verified=1`
+      : "/";
+
   return (
     <div className="min-h-screen bg-[#f5f2ea] py-8 px-4">
       <div className="mx-auto max-w-2xl">
@@ -242,6 +318,72 @@ export default function RequestTicketPage() {
             </span>
           )}
         </div>
+
+        {ticketIdParam && accountNumber && (
+          <div className="mb-6 rounded-3xl border border-neutral-200/80 bg-white p-6 shadow-sm sm:p-8">
+            <h2 className="text-lg font-semibold text-neutral-900">Your support ticket</h2>
+            {linkedTicketLoading && (
+              <p className="mt-3 text-sm text-neutral-500">Loading status…</p>
+            )}
+            {linkedTicketError && (
+              <p className="mt-3 text-sm text-red-600">{linkedTicketError}</p>
+            )}
+            {linkedTicket && !linkedTicketLoading && (
+              <dl className="mt-4 space-y-3 text-sm">
+                <div className="flex flex-wrap justify-between gap-2 border-b border-neutral-100 pb-3">
+                  <dt className="text-neutral-500">Status</dt>
+                  <dd className="font-semibold text-neutral-900">
+                    {TICKET_STATUS_LABEL[linkedTicket.status] ?? linkedTicket.status}
+                  </dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2 border-b border-neutral-100 pb-3">
+                  <dt className="text-neutral-500">Category</dt>
+                  <dd className="text-neutral-900">
+                    {TICKET_CATEGORY_LABEL[linkedTicket.category] ?? linkedTicket.category}
+                  </dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2 border-b border-neutral-100 pb-3">
+                  <dt className="text-neutral-500">Reference</dt>
+                  <dd className="font-mono text-xs text-neutral-800">{linkedTicket.id}</dd>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <dt className="text-neutral-500">Last updated</dt>
+                  <dd className="text-neutral-800">
+                    {new Intl.DateTimeFormat(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    }).format(new Date(linkedTicket.updatedAt))}
+                  </dd>
+                </div>
+                {linkedTicket.resolutionNote && (
+                  <div className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-800">
+                    <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Note</p>
+                    <p className="mt-1 whitespace-pre-wrap">{linkedTicket.resolutionNote}</p>
+                  </div>
+                )}
+              </dl>
+            )}
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Link
+                href={landingHref}
+                className="inline-flex items-center justify-center rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+              >
+                Customer home
+              </Link>
+              <button
+                type="button"
+                onClick={() =>
+                  router.replace(
+                    `/verify/ticket?account=${encodeURIComponent(accountNumber)}`,
+                  )
+                }
+                className="inline-flex items-center justify-center rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Submit another request
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="rounded-3xl border border-neutral-200/80 bg-white p-6 shadow-sm sm:p-8">
           <h1 className="text-2xl font-semibold text-neutral-900">Request a support ticket</h1>

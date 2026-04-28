@@ -36,6 +36,15 @@ export async function GET(
         type: { in: ["INFO", "APPROVED", "DECLINED"] },
       },
       orderBy: { createdAt: "desc" },
+      include: {
+        application: {
+          select: {
+            recordNumber: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
     });
 
     return NextResponse.json(notifications);
@@ -105,6 +114,7 @@ export async function POST(
 
 // PATCH /api/applications/[accountNumber]/notifications - Mark notifications as read/unread
 // Body: { read?: boolean }  (default: true — "mark all as read")
+// Body: { read?: boolean, notificationIds?: string[] } — update specific rows (e.g. one tap)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ accountNumber: string }> }
@@ -117,6 +127,11 @@ export async function PATCH(
 
     const body = await request.json().catch(() => ({}));
     const readFlag = typeof body?.read === "boolean" ? body.read : true;
+    const notificationIds = Array.isArray(body?.notificationIds)
+      ? (body.notificationIds as unknown[]).filter(
+          (x): x is string => typeof x === "string" && x.length > 0
+        )
+      : null;
 
     const application = await prisma.application.findUnique({
       where: { accountNumber },
@@ -127,10 +142,24 @@ export async function PATCH(
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
 
+    const typeFilter = { in: ["INFO", "APPROVED", "DECLINED"] as const };
+
+    if (notificationIds && notificationIds.length > 0) {
+      const result = await prisma.notification.updateMany({
+        where: {
+          applicationId: application.id,
+          type: typeFilter,
+          id: { in: notificationIds },
+        },
+        data: { read: readFlag },
+      });
+      return NextResponse.json({ updated: result.count });
+    }
+
     const result = await prisma.notification.updateMany({
       where: {
         applicationId: application.id,
-        type: { in: ["INFO", "APPROVED", "DECLINED"] },
+        type: typeFilter,
         read: !readFlag,
       },
       data: { read: readFlag },

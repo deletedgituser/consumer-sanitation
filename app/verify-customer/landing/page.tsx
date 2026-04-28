@@ -27,7 +27,20 @@ export default function VerifyCustomerLandingPage() {
   const [reason, setReason] = useState<ApplicationReason>("simple_correction");
   const [ownerName, setOwnerName] = useState("");
 
-  const [notifications, setNotifications] = useState<{ id: string; message: string; type: string; read?: boolean; createdAt?: string }[]>([]);
+  type LandingNotification = {
+    id: string;
+    message: string;
+    type: string;
+    read?: boolean;
+    createdAt?: string;
+    application?: {
+      recordNumber: string;
+      firstName: string;
+      lastName: string;
+    } | null;
+  };
+
+  const [notifications, setNotifications] = useState<LandingNotification[]>([]);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
 
@@ -103,6 +116,43 @@ export default function VerifyCustomerLandingPage() {
     () => notifications.filter((n) => !n.read).length,
     [notifications],
   );
+
+  /** Hide routing token from customer-visible copy (see `[ticket:id]` in API messages). */
+  const displayNotificationBody = (message: string) =>
+    message.replace(/\s*\[ticket:[^\]]+\]\s*$/, "").trim();
+
+  const parseTicketIdFromMessage = (message: string) => {
+    const m = message.match(/\[ticket:([^\]]+)\]/);
+    return m?.[1]?.trim() ?? null;
+  };
+
+  const markNotificationsReadByIds = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    try {
+      const res = await fetch(`/api/applications/${encodeURIComponent(account)}/notifications`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ read: true, notificationIds: ids }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setNotifications((prev) =>
+        prev.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n)),
+      );
+    } catch {
+      toast.error("Could not update notification");
+    }
+  };
+
+  const handleNotificationRowClick = async (n: LandingNotification) => {
+    const ticketId = parseTicketIdFromMessage(n.message);
+    await markNotificationsReadByIds([n.id]);
+    setNotificationOpen(false);
+    if (ticketId) {
+      router.push(
+        `/verify/ticket?account=${encodeURIComponent(account)}&ticketId=${encodeURIComponent(ticketId)}`,
+      );
+    }
+  };
 
   const markAllAsRead = async () => {
     if (unreadCount === 0) return;
@@ -216,34 +266,65 @@ export default function VerifyCustomerLandingPage() {
                     {notifications.length === 0 ? (
                       <p className="px-4 py-6 text-center text-sm text-neutral-500">No notifications</p>
                     ) : (
-                      notifications.map((n) => (
-                        <div
-                          key={n.id}
-                          className={`flex items-start gap-3 px-4 py-3 ${
-                            n.read ? "bg-transparent" : "bg-neutral-100/80"
-                          }`}
-                        >
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200">
-                            <svg className="h-4 w-4 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className={`text-sm ${n.read ? "font-normal text-neutral-700" : "font-semibold text-neutral-900"}`}>
-                              {n.message}
-                            </p>
-                            {n.createdAt && (
-                              <p className="mt-0.5 text-xs text-neutral-500">{formatNotificationTime(n.createdAt)}</p>
+                      notifications.map((n) => {
+                        const ticketId = parseTicketIdFromMessage(n.message);
+                        const title =
+                          n.application?.recordNumber != null
+                            ? `Record #${n.application.recordNumber}`
+                            : "Notification";
+                        const owner =
+                          n.application?.firstName || n.application?.lastName
+                            ? `${n.application.firstName} ${n.application.lastName}`.trim()
+                            : null;
+                        return (
+                          <button
+                            key={n.id}
+                            type="button"
+                            onClick={() => void handleNotificationRowClick(n)}
+                            className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-neutral-100/90 ${
+                              n.read ? "bg-transparent" : "bg-neutral-100/80"
+                            }`}
+                          >
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200">
+                              <svg className="h-4 w-4 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <p
+                                  className={`text-sm ${n.read ? "font-normal text-neutral-700" : "font-semibold text-neutral-900"}`}
+                                >
+                                  {title}
+                                </p>
+                                <span className="shrink-0 rounded-full bg-neutral-200/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-700">
+                                  {n.type}
+                                </span>
+                              </div>
+                              <p className={`mt-0.5 text-sm ${n.read ? "text-neutral-600" : "text-neutral-800"}`}>
+                                {displayNotificationBody(n.message)}
+                              </p>
+                              {n.createdAt && (
+                                <p className="mt-0.5 text-xs text-neutral-500">{formatNotificationTime(n.createdAt)}</p>
+                              )}
+                              {owner && (
+                                <p className="mt-1 text-xs text-neutral-500">{owner}</p>
+                              )}
+                              {ticketId && (
+                                <p className="mt-1 text-xs font-medium text-neutral-600">
+                                  Tap to view ticket status
+                                </p>
+                              )}
+                            </div>
+                            {!n.read && (
+                              <span
+                                aria-label="Unread"
+                                className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-500"
+                              />
                             )}
-                          </div>
-                          {!n.read && (
-                            <span
-                              aria-label="Unread"
-                              className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-500"
-                            />
-                          )}
-                        </div>
-                      ))
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </div>

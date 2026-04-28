@@ -242,7 +242,16 @@ function toEditable(app: ApplicationDetails | null): EditableApplication | null 
   };
 }
 
-export default function TicketsAdmin() {
+type TicketsAdminProps = {
+  /** Select this ticket row when arriving from a notification (see `[ticket:id]` in message). */
+  focusTicketId?: string | null;
+  onFocusTicketConsumed?: () => void;
+};
+
+export default function TicketsAdmin({
+  focusTicketId,
+  onFocusTicketConsumed,
+}: TicketsAdminProps = {}) {
   const { data: session } = useSession();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -278,6 +287,24 @@ export default function TicketsAdmin() {
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
+
+  useEffect(() => {
+    if (!focusTicketId) return;
+    setStatusFilter("ALL");
+    setQuery("");
+  }, [focusTicketId]);
+
+  useEffect(() => {
+    if (!focusTicketId || loading) return;
+    const found = tickets.some((t) => t.id === focusTicketId);
+    if (found) {
+      setSelectedId(focusTicketId);
+      onFocusTicketConsumed?.();
+    } else {
+      toast.error("Ticket not found. It may have been removed or is hidden by filters.");
+      onFocusTicketConsumed?.();
+    }
+  }, [focusTicketId, tickets, loading, onFocusTicketConsumed]);
 
   const selected = useMemo(
     () => tickets.find((t) => t.id === selectedId) ?? null,

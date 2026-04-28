@@ -134,12 +134,19 @@ export async function POST(request: NextRequest) {
         });
         if (application) {
           const catLabel = TICKET_CATEGORY_LABEL[category] ?? category;
-          const summary = `New support ticket (${catLabel}): ${name} · ${phoneNumber}. Ref ${ticket.id.slice(0, 8)}…`;
+          // Machine-readable suffix so admin UI can open Tickets instead of the application record.
+          const token = `[ticket:${ticket.id}]`;
+          const human = `New support ticket (${catLabel}): ${name} · ${phoneNumber}.`;
+          let summary = `${human} ${token}`;
+          if (summary.length > 500) {
+            const room = Math.max(0, 500 - token.length - 1);
+            summary = `${human.slice(0, room).trim()} ${token}`.slice(0, 500);
+          }
           await prisma.notification.create({
             data: {
               applicationId: application.id,
               type: "PENDING",
-              message: summary.slice(0, 500),
+              message: summary,
               read: false,
             },
           });

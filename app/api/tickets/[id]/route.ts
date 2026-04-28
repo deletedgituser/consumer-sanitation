@@ -126,12 +126,17 @@ export async function PATCH(
           } else {
             msg = "Your support ticket has been closed.";
           }
-          const ref = ` Ref ${ticket.id.slice(0, 8)}…`;
+          const token = `[ticket:${ticket.id}]`;
+          let full = `${msg} ${token}`;
+          if (full.length > 500) {
+            const room = Math.max(0, 500 - token.length - 1);
+            full = `${msg.slice(0, room).trim()} ${token}`.slice(0, 500);
+          }
           await prisma.notification.create({
             data: {
               applicationId: application.id,
               type: "INFO",
-              message: (msg + ref).slice(0, 500),
+              message: full,
               read: false,
             },
           });

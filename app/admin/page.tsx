@@ -1163,6 +1163,8 @@ export default function AdminDashboardPage() {
   const [activeNav, setActiveNav] = useState<NavId>("dashboard");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [ticketContext, setTicketContext] = useState<TicketContext | null>(null);
+  /** When set, Tickets view selects this row (from notification deep-link). */
+  const [ticketsNavFocusId, setTicketsNavFocusId] = useState<string | null>(null);
   const [resolveTicketOpen, setResolveTicketOpen] = useState(false);
   const [resolveNote, setResolveNote] = useState("");
   const [theme, setTheme] = useState<Theme>("light");
@@ -1648,6 +1650,14 @@ export default function AdminDashboardPage() {
 
   const handleNotificationClick = async (n: AdminNotification) => {
     await markNotificationsRead([n.id]);
+    const ticketToken = n.message.match(/\[ticket:([^\]]+)\]/);
+    const ticketIdFromNotif = ticketToken?.[1]?.trim();
+    if (ticketIdFromNotif) {
+      setActiveNav("tickets");
+      setTicketsNavFocusId(ticketIdFromNotif);
+      setNotifMenuOpen(false);
+      return;
+    }
     const acct = n.application?.accountNumber ?? null;
     if (acct) {
       const fresh = await fetchApplicationByAccount(acct);
@@ -2769,7 +2779,10 @@ export default function AdminDashboardPage() {
               </div>
             ) : activeNav === "tickets" ? (
               <div className="admin-animate-in">
-                <TicketsAdmin />
+                <TicketsAdmin
+                  focusTicketId={ticketsNavFocusId}
+                  onFocusTicketConsumed={() => setTicketsNavFocusId(null)}
+                />
               </div>
             ) : null}
           </div>
