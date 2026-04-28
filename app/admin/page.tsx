@@ -1203,6 +1203,10 @@ export default function AdminDashboardPage() {
     } | null;
   };
 
+  /** Admin bell: registration queue + support tickets — never APPROVED/DECLINED/customer INFO. */
+  const isAdminBellNotification = (n: { type: string }) =>
+    n.type === "ADMIN_APPLICATION" || n.type === "ADMIN_TICKET";
+
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [notifError, setNotifError] = useState<string | null>(null);
@@ -1213,9 +1217,14 @@ export default function AdminDashboardPage() {
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
 
+  const adminNotifications = useMemo(
+    () => notifications.filter(isAdminBellNotification),
+    [notifications],
+  );
+
   const unreadCount = useMemo(
-    () => notifications.filter((n) => !n.read).length,
-    [notifications]
+    () => adminNotifications.filter((n) => !n.read).length,
+    [adminNotifications]
   );
 
   // shared table classes for log view
@@ -1529,11 +1538,15 @@ export default function AdminDashboardPage() {
   const fetchNotifications = async () => {
     try {
       setNotifError(null);
-      const resp = await fetch("/api/notifications?unread=false&limit=20");
+      const resp = await fetch("/api/notifications?unread=false&limit=20", {
+        cache: "no-store",
+      });
       if (!resp.ok) throw new Error("Failed to fetch notifications");
       const data = await resp.json();
-      // newest first from API
-      setNotifications(data);
+      const rows = Array.isArray(data)
+        ? (data as AdminNotification[]).filter(isAdminBellNotification)
+        : [];
+      setNotifications(rows);
     } catch (e) {
       setNotifError(e instanceof Error ? e.message : "Failed to fetch notifications");
     }
@@ -1575,13 +1588,20 @@ export default function AdminDashboardPage() {
         try {
           const payload = JSON.parse((evt as MessageEvent).data) as { notifications?: AdminNotification[]; since?: string };
           if (payload?.since) setNotifSince(String(payload.since));
-          const incoming = Array.isArray(payload?.notifications) ? payload.notifications : [];
-          if (incoming.length === 0) return;
+          const incoming = (
+            Array.isArray(payload?.notifications) ? payload.notifications : []
+          ) as AdminNotification[];
+          const pendingOnly = incoming.filter(isAdminBellNotification);
+          if (pendingOnly.length === 0) return;
 
           // merge new notifications (dedupe by id) while keeping newest-first order
           setNotifications((prev) => {
-            const seen = new Set(prev.map((n) => n.id));
-            const merged = [...incoming.filter((n) => !seen.has(n.id)).reverse(), ...prev];
+            const cleanedPrev = prev.filter(isAdminBellNotification);
+            const seen = new Set(cleanedPrev.map((n) => n.id));
+            const merged = [
+              ...pendingOnly.filter((n) => !seen.has(n.id)).reverse(),
+              ...cleanedPrev,
+            ];
             return merged.slice(0, 50);
           });
         } catch {
@@ -1643,6 +1663,31 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({ ids, read: false }),
       });
       if (!resp.ok) throw new Error("Failed to mark notifications unread");
+    } catch {
+      void fetchNotifications();
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (adminNotifications.length === 0) return;
+    try {
+      const listResp = await fetch("/api/notifications?unread=false&limit=500", {
+        cache: "no-store",
+      });
+      if (!listResp.ok) throw new Error("Failed to load notifications");
+      const list = (await listResp.json()) as AdminNotification[];
+      const ids = Array.isArray(list) ? list.map((n) => n.id).filter(Boolean) : [];
+      if (ids.length === 0) {
+        setNotifications([]);
+        return;
+      }
+      const delResp = await fetch("/api/notifications", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!delResp.ok) throw new Error("Failed to clear notifications");
+      setNotifications([]);
     } catch {
       void fetchNotifications();
     }
@@ -2293,11 +2338,11 @@ export default function AdminDashboardPage() {
                     <p className={`text-sm font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-800"}`}>
                       Notifications
                     </p>
-                    <div className="flex items-center gap-3">
-                      {notifications.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                      {adminNotifications.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => markNotificationsUnread(notifications.map((n) => n.id))}
+                          onClick={() => markNotificationsUnread(adminNotifications.map((n) => n.id))}
                           className={`text-xs font-semibold hover:underline ${
                             theme === "dark" ? "text-slate-300" : "text-slate-500"
                           }`}
@@ -2308,12 +2353,23 @@ export default function AdminDashboardPage() {
                       {unreadCount > 0 && (
                         <button
                           type="button"
-                          onClick={() => markNotificationsRead(notifications.filter((n) => !n.read).map((n) => n.id))}
+                          onClick={() => markNotificationsRead(adminNotifications.filter((n) => !n.read).map((n) => n.id))}
                           className={`text-xs font-semibold hover:underline ${
                             theme === "dark" ? "text-[#FFF19B]" : "text-[#3D45AA]"
                           }`}
                         >
                           Mark all read
+                        </button>
+                      )}
+                      {adminNotifications.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void clearAllNotifications()}
+                          className={`text-xs font-semibold hover:underline ${
+                            theme === "dark" ? "text-red-300" : "text-red-600"
+                          }`}
+                        >
+                          Clear all
                         </button>
                       )}
                     </div>
@@ -2326,13 +2382,13 @@ export default function AdminDashboardPage() {
                   )}
 
                   <div className="max-h-80 overflow-y-auto">
-                    {notifications.length === 0 ? (
+                    {adminNotifications.length === 0 ? (
                       <div className={`px-4 py-6 text-center text-sm ${theme === "dark" ? "text-slate-300" : "text-slate-500"}`}>
                         No new notifications.
                       </div>
                     ) : (
                       <div className="divide-y divide-slate-100">
-                        {notifications.slice(0, 20).map((n) => (
+                        {adminNotifications.slice(0, 20).map((n) => (
                             <button
                               key={n.id}
                               type="button"
@@ -2374,15 +2430,21 @@ export default function AdminDashboardPage() {
                                   )}
                                 </div>
                                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                  n.type === "PENDING"
+                                  n.type === "ADMIN_APPLICATION"
                                     ? "bg-amber-100 text-amber-700"
-                                    : n.type === "APPROVED"
-                                      ? "bg-emerald-100 text-emerald-700"
-                                      : n.type === "DECLINED"
-                                        ? "bg-red-100 text-red-700"
-                                        : "bg-slate-100 text-slate-700"
+                                    : n.type === "ADMIN_TICKET"
+                                      ? "bg-sky-100 text-sky-800"
+                                      : n.type === "APPROVED"
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : n.type === "DECLINED"
+                                          ? "bg-red-100 text-red-700"
+                                          : "bg-slate-100 text-slate-700"
                                 }`}>
-                                  {n.type}
+                                  {n.type === "ADMIN_APPLICATION"
+                                    ? "APPLICATION"
+                                    : n.type === "ADMIN_TICKET"
+                                      ? "TICKET"
+                                      : n.type}
                                 </span>
                               </div>
                             </button>

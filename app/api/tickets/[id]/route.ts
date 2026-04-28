@@ -1,5 +1,6 @@
 // app/api/tickets/[id]/route.ts — admin: view / update a single ticket
 import { NextRequest, NextResponse } from "next/server";
+import { NotificationType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 
@@ -135,7 +136,7 @@ export async function PATCH(
           await prisma.notification.create({
             data: {
               applicationId: application.id,
-              type: "INFO",
+              type: NotificationType.INFO,
               message: full,
               read: false,
             },

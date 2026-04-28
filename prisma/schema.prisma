@@ -239,10 +239,13 @@ model Notification {
 }
 
 enum NotificationType {
-  PENDING   // Application pending
-  APPROVED  // Application approved
-  DECLINED  // Application declined
-  INFO      // Generic (e.g. application submitted)
+  PENDING   // Customer — application awaiting decision
+  APPROVED  // Customer — approved
+  DECLINED  // Customer — declined
+  INFO      // Customer — generic updates (edits submitted, ticket status, etc.)
+
+  ADMIN_APPLICATION // Admin bulletin only — new/updated registration queue entry
+  ADMIN_TICKET       // Admin bulletin only — support ticket filed (click opens Tickets)
 }
 
 enum LogAction {

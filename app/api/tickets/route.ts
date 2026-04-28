@@ -1,5 +1,6 @@
 // app/api/tickets/route.ts — create a support ticket (public) + list (admin)
 import { NextRequest, NextResponse } from "next/server";
+import { NotificationType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { promises as fs } from "node:fs";
@@ -124,8 +125,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Notify admins (global notification feed): link to local application when account exists.
-    // Type PENDING is shown in admin bell and excluded from customer notification list.
+    // Admin bulletin only (type ADMIN_TICKET). Customer ticket updates use type INFO via PATCH /api/tickets/[id].
     if (accountNumber) {
       try {
         const application = await prisma.application.findUnique({
@@ -134,9 +134,9 @@ export async function POST(request: NextRequest) {
         });
         if (application) {
           const catLabel = TICKET_CATEGORY_LABEL[category] ?? category;
-          // Machine-readable suffix so admin UI can open Tickets instead of the application record.
           const token = `[ticket:${ticket.id}]`;
-          const human = `New support ticket (${catLabel}): ${name} · ${phoneNumber}.`;
+          const acctPart = accountNumber ? ` Account: ${accountNumber}.` : "";
+          const human = `${name} submitted a support ticket (${catLabel}).${acctPart} Phone: ${phoneNumber}.`;
           let summary = `${human} ${token}`;
           if (summary.length > 500) {
             const room = Math.max(0, 500 - token.length - 1);
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
           await prisma.notification.create({
             data: {
               applicationId: application.id,
-              type: "PENDING",
+              type: NotificationType.ADMIN_TICKET,
               message: summary,
               read: false,
             },

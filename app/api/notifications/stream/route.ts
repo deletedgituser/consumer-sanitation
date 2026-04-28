@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
+import { NotificationType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,6 +76,9 @@ export async function GET(request: NextRequest) {
         while (!closed) {
           const notifications = await prisma.notification.findMany({
             where: {
+              type: {
+                in: [NotificationType.ADMIN_APPLICATION, NotificationType.ADMIN_TICKET],
+              },
               read: false,
               createdAt: { gt: since },
             },

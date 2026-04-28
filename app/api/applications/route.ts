@@ -1,7 +1,91 @@
 // app/api/applications/route.ts - List and Create applications
 import { NextRequest, NextResponse } from "next/server";
+import { NotificationType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
+
+function labelApplicationKind(appType: string): string {
+  const u = appType?.toUpperCase();
+  if (u === "NEW") return "new application";
+  if (u === "CHANGE") return "transfer or change-of-service application";
+  return appType;
+}
+
+function labelMembership(mt: string): string {
+  const u = mt?.toUpperCase();
+  if (u === "HOUSEHOLD") return "Household membership";
+  if (u === "CORPORATE") return "Corporate membership";
+  return mt;
+}
+
+/** Shared copy for admin bulletin (type ADMIN_APPLICATION). */
+function adminApplicationBulletinMessage(app: {
+  firstName: string;
+  middleName?: string | null;
+  lastName: string;
+  appType: string;
+  membership: string;
+  accountNumber: string | null;
+  recordNumber: string;
+}): string {
+  const fullName =
+    [app.firstName, app.middleName, app.lastName].filter(Boolean).join(" ").trim() || app.firstName;
+  const acctLabel = app.accountNumber?.trim() ? app.accountNumber : "account pending assignment";
+  return `${fullName} has a ${labelApplicationKind(app.appType)} (${labelMembership(
+    app.membership,
+  )}) for their account (${acctLabel}). Record #${app.recordNumber}.`.slice(0, 500);
+}
+
+async function notifyAdminApplicationBulletin(applicationId: string, message: string) {
+  await prisma.notification.create({
+    data: {
+      applicationId,
+      type: NotificationType.ADMIN_APPLICATION,
+      message,
+      read: false,
+    },
+  });
+}
+
+/** Avoid duplicate bulletins when the customer refreshes and POST sync runs again within a short window. */
+async function notifyAdminApplicationBulletinDeduped(
+  applicationId: string,
+  message: string,
+  windowMs = 120_000,
+) {
+  const recent = await prisma.notification.findFirst({
+    where: {
+      applicationId,
+      type: NotificationType.ADMIN_APPLICATION,
+      createdAt: { gt: new Date(Date.now() - windowMs) },
+    },
+    select: { id: true },
+  });
+  if (recent) return;
+  await notifyAdminApplicationBulletin(applicationId, message);
+}
+
+/** Customer PENDING row — only if missing (existing-app sync path may never hit create()). */
+async function ensureCustomerPendingNotification(app: { id: string; recordNumber: string }) {
+  const exists = await prisma.notification.findFirst({
+    where: { applicationId: app.id, type: NotificationType.PENDING },
+    select: { id: true },
+  });
+  if (exists) return;
+  const msg =
+    `Your application (Record #${app.recordNumber}) is pending review. We'll notify you here when it's approved or declined.`.slice(
+      0,
+      500,
+    );
+  await prisma.notification.create({
+    data: {
+      applicationId: app.id,
+      type: NotificationType.PENDING,
+      message: msg,
+      read: false,
+    },
+  });
+}
 
 // GET /api/applications - List all applications
 export async function GET(request: NextRequest) {
@@ -192,6 +276,16 @@ export async function POST(request: NextRequest) {
         data: syncPayload,
         include: fullInclude,
       });
+
+      // Most customers already had a row from FastAPI/seed — POST hits this branch, not create().
+      // Emit admin + customer PENDING after a real sync (dedupe rapid repeats on refresh).
+      try {
+        await notifyAdminApplicationBulletinDeduped(updated.id, adminApplicationBulletinMessage(updated));
+        await ensureCustomerPendingNotification(updated);
+      } catch (notifyErr) {
+        console.error("[POST /api/applications] bulletin after sync failed:", notifyErr);
+      }
+
       return NextResponse.json(updated, { status: 200 });
     }
 
@@ -215,28 +309,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Create a pending notification (admin + customer views)
-    const fullName = [application.firstName, application.middleName, application.lastName].filter(Boolean).join(" ");
-
-    // Try to extract a friendly update type from notes, e.g. \"Update type: Correct my information ...\"
-    let updateType: string | null = null;
-    if (typeof application.notes === "string") {
-      const match = application.notes.match(/^\s*Update type\s*:\s*(.+)\s*$/im);
-      if (match?.[1]) updateType = match[1].trim();
+    try {
+      await notifyAdminApplicationBulletin(application.id, adminApplicationBulletinMessage(application));
+      await ensureCustomerPendingNotification(application);
+    } catch (notifyErr) {
+      console.error("[POST /api/applications] bulletin on create failed:", notifyErr);
     }
-
-    const basePendingMessage = updateType
-      ? `Name: ${fullName || application.firstName} · Application type: ${updateType}`
-      : `Name: ${fullName || application.firstName} · Application type: ${application.appType?.toString() || "Pending update"}`;
-
-    await (prisma as any).notification.create({
-      data: {
-        applicationId: application.id,
-        type: "PENDING",
-        message: basePendingMessage,
-        read: false,
-      },
-    });
 
     // Log the creation activity (only if authenticated)
     if (session?.user) {

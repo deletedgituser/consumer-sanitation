@@ -1,6 +1,7 @@
 // app/api/applications/[accountNumber]/notifications/route.ts - Get and Create notifications for an application
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { excludeAdminOnlyNotification } from "@/lib/customer-notification-filter";
 
 type NotificationType = "PENDING" | "APPROVED" | "DECLINED" | "INFO";
 
@@ -24,16 +25,14 @@ export async function GET(
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
 
-    // Customer-facing feed: only show notifications meant for the customer.
-    // - INFO: "Your changes have been submitted..." (sent on customer save)
-    // - APPROVED: "Your application has been approved."
-    // - DECLINED: "Your application has been declined."
-    // The PENDING type is internal/admin-oriented ("Name: X · Application type: Y")
-    // and is intentionally excluded from the customer's bell.
+    // Customer bell: application lifecycle (PENDING / APPROVED / DECLINED) plus INFO for
+    // operational messages (e.g. edits submitted, ticket status). Never ADMIN_* bulletin rows.
     const notifications = await prisma.notification.findMany({
       where: {
         applicationId: application.id,
-        type: { in: ["INFO", "APPROVED", "DECLINED"] },
+        type: {
+          in: ["PENDING", "INFO", "APPROVED", "DECLINED"],
+        },
       },
       orderBy: { createdAt: "desc" },
       include: {
@@ -47,7 +46,7 @@ export async function GET(
       },
     });
 
-    return NextResponse.json(notifications);
+    return NextResponse.json(excludeAdminOnlyNotification(notifications));
   } catch {
     return NextResponse.json(
       { error: "Failed to fetch notifications" },
@@ -69,6 +68,14 @@ export async function POST(
 
     const body = await request.json();
     const { message, type } = body as { message?: string; type?: string };
+
+    const rawType = String(type ?? "").toUpperCase();
+    if (rawType.startsWith("ADMIN_")) {
+      return NextResponse.json(
+        { error: "Admin bulletin types cannot be created through this endpoint." },
+        { status: 400 },
+      );
+    }
 
     if (!message || typeof message !== "string" || message.length > 500) {
       return NextResponse.json(
@@ -142,7 +149,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
 
-    const typeFilter = { in: ["INFO", "APPROVED", "DECLINED"] as const };
+    const typeFilter = { in: ["PENDING", "INFO", "APPROVED", "DECLINED"] as const };
 
     if (notificationIds && notificationIds.length > 0) {
       const result = await prisma.notification.updateMany({
@@ -195,7 +202,10 @@ export async function DELETE(
     }
 
     const result = await prisma.notification.deleteMany({
-      where: { applicationId: application.id },
+      where: {
+        applicationId: application.id,
+        type: { in: ["PENDING", "INFO", "APPROVED", "DECLINED"] },
+      },
     });
 
     return NextResponse.json({ deleted: result.count });

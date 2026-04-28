@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
+import { excludeAdminOnlyNotification } from "@/lib/customer-notification-filter";
 
 export async function GET(
   _request: NextRequest,
@@ -37,7 +38,9 @@ export async function GET(
           },
         },
         notifications: {
-          where: { type: { in: ["INFO", "APPROVED", "DECLINED"] } },
+          where: {
+            type: { in: ["PENDING", "INFO", "APPROVED", "DECLINED"] },
+          },
           orderBy: { createdAt: "desc" },
         },
       },
@@ -56,7 +59,7 @@ export async function GET(
     return NextResponse.json({
       application,
       logs: application.activityLogs,
-      notifications: application.notifications,
+      notifications: excludeAdminOnlyNotification(application.notifications),
       generatedAt: new Date().toISOString(),
       generatedBy,
     });
