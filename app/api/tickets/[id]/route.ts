@@ -89,6 +89,11 @@ export async function PATCH(
       );
     }
 
+    const existing = await prisma.supportTicket.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+    }
+
     const ticket = await prisma.supportTicket.update({
       where: { id },
       data,
@@ -96,6 +101,48 @@ export async function PATCH(
         resolvedBy: { select: { id: true, name: true, username: true } },
       },
     });
+
+    // Customer bell (INFO): show when ticket reaches In review / Resolved / Closed.
+    const prevStatus = existing.status;
+    const newStatus = ticket.status;
+    if (
+      body.status &&
+      prevStatus !== newStatus &&
+      ["IN_REVIEW", "RESOLVED", "CLOSED"].includes(newStatus) &&
+      ticket.accountNumber
+    ) {
+      try {
+        const application = await prisma.application.findUnique({
+          where: { accountNumber: ticket.accountNumber },
+          select: { id: true },
+        });
+        if (application) {
+          let msg = "";
+          if (newStatus === "IN_REVIEW") {
+            msg =
+              "Your support ticket is now in review. We'll contact you if needed.";
+          } else if (newStatus === "RESOLVED") {
+            msg = "Your support ticket has been resolved.";
+          } else {
+            msg = "Your support ticket has been closed.";
+          }
+          const ref = ` Ref ${ticket.id.slice(0, 8)}…`;
+          await prisma.notification.create({
+            data: {
+              applicationId: application.id,
+              type: "INFO",
+              message: (msg + ref).slice(0, 500),
+              read: false,
+            },
+          });
+        }
+      } catch (e) {
+        console.error(
+          "[PATCH /api/tickets/[id]] customer notification failed:",
+          e
+        );
+      }
+    }
 
     return NextResponse.json(ticket);
   } catch (err) {

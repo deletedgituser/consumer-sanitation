@@ -15,6 +15,13 @@ const VALID_CATEGORIES = new Set([
 
 const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024; // 8 MB
 
+const TICKET_CATEGORY_LABEL: Record<string, string> = {
+  ID_MISSPELLED: "ID misspelled",
+  NO_ID: "No ID",
+  ID_IN_4PS: "ID in 4Ps",
+  OTHER: "Other",
+};
+
 function sanitizeFilename(name: string): string {
   const base = name.replace(/[^\w.\-]+/g, "_").slice(0, 80);
   return base || "upload";
@@ -116,6 +123,31 @@ export async function POST(request: NextRequest) {
         attachmentName: attachment?.name ?? null,
       },
     });
+
+    // Notify admins (global notification feed): link to local application when account exists.
+    // Type PENDING is shown in admin bell and excluded from customer notification list.
+    if (accountNumber) {
+      try {
+        const application = await prisma.application.findUnique({
+          where: { accountNumber },
+          select: { id: true },
+        });
+        if (application) {
+          const catLabel = TICKET_CATEGORY_LABEL[category] ?? category;
+          const summary = `New support ticket (${catLabel}): ${name} · ${phoneNumber}. Ref ${ticket.id.slice(0, 8)}…`;
+          await prisma.notification.create({
+            data: {
+              applicationId: application.id,
+              type: "PENDING",
+              message: summary.slice(0, 500),
+              read: false,
+            },
+          });
+        }
+      } catch (e) {
+        console.error("[POST /api/tickets] admin notification failed:", e);
+      }
+    }
 
     return NextResponse.json(
       { id: ticket.id, status: ticket.status, createdAt: ticket.createdAt },

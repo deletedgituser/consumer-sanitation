@@ -323,7 +323,7 @@ export default function RequestTicketPage() {
                   Minimum {MESSAGE_MIN} characters
                 </span>
                 <span className={messageLen > 0 && messageLen < MESSAGE_MIN ? "text-red-600" : ""}>
-                  {messageLen}/{MESSAGE_MIN}
+                  {messageLen}
                 </span>
               </div>
             </Field>
