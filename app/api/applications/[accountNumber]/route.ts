@@ -1,6 +1,7 @@
 // app/api/applications/[accountNumber]/route.ts - Get, Update, Delete single application (uses accountNumber parameter)
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { NotificationType } from "@prisma/client";
 import { auth } from "@/auth";
 import { isValidMobileNumber, normalizeMobileNumber } from "@/lib/account-verification";
 
@@ -58,6 +59,60 @@ function convertSnakeToCamel(obj: Record<string, any>): Record<string, any> {
   }
 
   return camelCased;
+}
+
+function labelApplicationKind(appType: string | null | undefined): string {
+  const u = String(appType ?? "").toUpperCase();
+  if (u === "NEW") return "new application";
+  if (u === "CHANGE") return "transfer or change-of-service application";
+  return appType ?? "application";
+}
+
+function labelMembership(mt: string | null | undefined): string {
+  const u = String(mt ?? "").toUpperCase();
+  if (u === "HOUSEHOLD") return "Household membership";
+  if (u === "CORPORATE") return "Corporate membership";
+  return mt ?? "membership";
+}
+
+function adminCustomerSubmissionMessage(app: {
+  firstName: string | null;
+  middleName: string | null;
+  lastName: string | null;
+  appType: string | null;
+  membership: string | null;
+  accountNumber: string | null;
+  recordNumber: string;
+}): string {
+  const fullName = [app.firstName, app.middleName, app.lastName].filter(Boolean).join(" ").trim();
+  const acctLabel = app.accountNumber?.trim() ? app.accountNumber : "account pending assignment";
+  return `${fullName || "Applicant"} submitted a ${labelApplicationKind(app.appType)} (${labelMembership(
+    app.membership,
+  )}) for account ${acctLabel}. Record #${app.recordNumber}.`.slice(0, 500);
+}
+
+async function notifyAdminCustomerSubmission(
+  applicationId: string,
+  message: string,
+  windowMs = 120_000,
+) {
+  const recent = await prisma.notification.findFirst({
+    where: {
+      applicationId,
+      type: NotificationType.ADMIN_APPLICATION,
+      createdAt: { gt: new Date(Date.now() - windowMs) },
+    },
+    select: { id: true },
+  });
+  if (recent) return;
+  await prisma.notification.create({
+    data: {
+      applicationId,
+      type: NotificationType.ADMIN_APPLICATION,
+      message,
+      read: false,
+    },
+  });
 }
 
 // GET /api/applications/[accountNumber] - Get single application
@@ -367,9 +422,11 @@ export async function PATCH(
     }
 
     // For customer edits, store a before/after diff in ActivityLog.metadata (even if an admin session cookie exists)
+    let customerDiff: Record<string, { before: string; after: string }> | null = null;
     if ((action === "edit" || !action) && source === "customer") {
       const diff = buildDiff(existing as any, filteredData as any);
       if (Object.keys(diff).length > 0) {
+        customerDiff = diff;
         const customerUpdateReason =
           typeof (filteredData as any)?.customerUpdateReason === "string" && (filteredData as any).customerUpdateReason.trim()
             ? (filteredData as any).customerUpdateReason.trim()
@@ -384,10 +441,24 @@ export async function PATCH(
               recordNumber: application.recordNumber,
               accountNumber: application.accountNumber,
               customerUpdateReason,
-              diff,
+              diff: customerDiff,
             },
           },
         });
+      }
+    }
+
+    if (customerDiff) {
+      try {
+        await notifyAdminCustomerSubmission(
+          application.id,
+          adminCustomerSubmissionMessage(application),
+        );
+      } catch (notifErr) {
+        console.error(
+          `[PATCH /api/applications/${accountNumber}] failed to create ADMIN_APPLICATION notification`,
+          notifErr,
+        );
       }
     }
 
